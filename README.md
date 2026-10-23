@@ -13,10 +13,10 @@ Financial accounts, tariffs and balance operations remain in ecosystem.
 ```text
 exordos_usage/
     cmd/                 Service entry points
-    common/              Python configuration options, clients and storage
-    services/            Collection worker
+    common/              Configuration, HTTP clients and OpenAPI generation
+    services/            gcl_looper collection service
     user_api/api/        RestAlchemy application, routes and controllers
-    user_api/dm/         Attribution history and usage calculations
+    user_api/dm/         Storage models, usage integration and report queries
     tests/unit/          Tests without external services
     tests/functional/    PostgreSQL and authenticated API tests
 migrations/              RestAlchemy migration steps
@@ -27,58 +27,97 @@ exordos/                 Element manifest and image scripts
 
 ## Development
 
+Python 3.14 is the default development and CI version. Install the `libev`
+development headers required by Bjoern before installing Python dependencies.
+
 ```bash
 uv sync --extra test
-uv run pytest exordos_usage/tests/unit
-uv run ruff check .
-uv run ruff format --check .
+uv run --extra test pytest exordos_usage/tests/unit
+uv run --extra test ruff check .
+uv run --extra test ruff format --check .
 ```
 
 Run PostgreSQL tests against a disposable database. Each test uses a separate
 schema and removes it afterward.
 
 ```bash
-USAGE_TEST_DSN=postgresql://localhost/usage_test uv run pytest exordos_usage/tests/functional
+USAGE_TEST_DSN=postgresql://localhost/usage_test uv run --extra test pytest exordos_usage/tests/functional
 ```
 
 ## Configuration and startup
 
-Options are declared in Python with `oslo.config` in
-`exordos_usage/common/config.py`, following `exordos_db`.
+Options are declared with `oslo.config` in `exordos_usage/common/config.py`.
 Render `etc/exordos_usage/exordos_usage.conf.j2` into
 `/etc/exordos_usage/exordos_usage.conf` and place `logging.yaml` beside it.
+Create `/etc/exordos_usage/exordos_usage.d` for additional `.conf` files.
 Keep the configuration private: it contains service and database credentials.
 
 Configure the database URL, VictoriaMetrics endpoint and reader credentials,
-the exact Core exporter `instance`, the ecosystem service credentials, a
-stable source UUID, and the IAM client endpoint, audience and JWKS key.
-An empty `ecosystem.host_realm` selects the central host realm.
+the exact Core exporter `instance`, the ecosystem service credentials, and
+the IAM client endpoint, audience and JWKS key. The VictoriaMetrics reader
+must permit `/api/v1/export`. An empty `ecosystem.host_realm` selects the
+central host realm. For an element installation, set the
+`usage_core_exporter_instance` Variable Store value to that exporter instance.
 
-Apply migrations before starting either service:
+Apply SDK migrations first, then usage migrations, before starting services:
 
 ```bash
+SDK_MIGRATIONS="$(uv run python -c 'import gcl_sdk; print(gcl_sdk.__path__[0] + "/migrations")')"
+uv run ra-apply-migration --config-file /etc/exordos_usage/exordos_usage.conf --path "$SDK_MIGRATIONS"
 uv run ra-apply-migration --config-file /etc/exordos_usage/exordos_usage.conf --path migrations
-uv run exordos-usage-user-api --config-file /etc/exordos_usage/exordos_usage.conf
-uv run exordos-usage-gservice --config-file /etc/exordos_usage/exordos_usage.conf
+uv run exordos-usage-user-api --config-file /etc/exordos_usage/exordos_usage.conf --config-dir /etc/exordos_usage/exordos_usage.d
+uv run exordos-usage-gservice --config-file /etc/exordos_usage/exordos_usage.conf --config-dir /etc/exordos_usage/exordos_usage.d
 ```
 
 Migrations use `MigrationStep`, stable UUIDs, dependencies and
 `upgrade`/`downgrade`; RestAlchemy records applied steps in `ra_migrations`.
-The element's configuration hook runs `cp_bootstrap.sh` to apply migrations
-before restarting the systemd services.
+The element's configuration hook runs `cp_bootstrap.sh` to apply both sets of
+migrations before restarting the systemd services.
+
+## Stored data
+
+- `CollectorState` stores one collector checkpoint and the last ownership
+  observation time.
+- `UsageBinding` stores resource, realm and project ownership for a validity
+  period, identified by UUID.
+- `UsageInterval` references a binding and stores one metric's integrated
+  quantity, measured coverage and calculation version for a period.
+
+When ownership changes, the previous binding is closed and a new one is
+created. Historical consumption remains attached to its original owner.
 
 ## API
 
-`GET /v1/usage/` lists the report endpoints: `summary/` for totals,
-`timeseries/` for graphs and `breakdown/` for realm or resource groups.
-Reports require `start`, `end` and the `usage.interval.read` permission.
+`GET /v1/usage/` lists the available reports:
+
+| Endpoint | Result | Additional parameters |
+| --- | --- | --- |
+| `/v1/usage/summary/` | Totals by metric | None |
+| `/v1/usage/timeseries/` | UTC time buckets | `step=5m`, `1h` or `1d`; default `1h` |
+| `/v1/usage/breakdown/` | Totals by realm or resource | `group_by=realm` or `resource`; default `realm` |
+
+Reports require a bearer token with `usage.interval.read` and a UTC range
+`[start, end)` of at most 31 days, with boundaries on five-minute marks.
 The project comes from the caller's IAM token; an unscoped token must supply
 `project_id`. Optional filters are `realm_uuid`, `resource_uuid` and `metric`.
+Supported metrics are `cpu_allocated`, `ram_allocated` and `disk_allocated`.
+Omitting `metric` returns all three.
 
-Reports sum stored segments fully inside the requested range, up to 31 days.
-Expected coverage comes from observed ownership, including unprocessed windows.
-Missing measurements have a null quantity; measured zero remains zero.
-`/health/` checks service availability without IAM authentication.
+Time series are limited to 2000 buckets. Breakdown pagination uses
+`page_limit` (1 to 200 groups, default 100) and `page_marker`. When another
+page exists, the response contains `X-Pagination-Marker`; pass its value as
+`page_marker` with the same filters and grouping for the next page.
+
+Quantities are exact decimal strings. Missing measurements have a null
+quantity; measured zero remains zero. Each metric reports `covered_ms`,
+`expected_ms` and `status` (`complete`, `partial` or `no_data`). Coverage is
+summed across resources and refers only to observed ownership, including
+windows not yet processed. Quantities sum stored segments fully inside the
+requested range.
+
+`GET /health/` checks service availability without IAM authentication.
+Generate the OpenAPI artifact with `uv run exordos-usage-openapi-spec`; the
+output is `docs/openapi/openapi_user.yaml` and is not committed.
 
 ## Collection semantics and current scope
 
@@ -91,26 +130,3 @@ Missing measurements have a null quantity; measured zero remains zero.
 - Reprocessing a window replaces its records atomically with cursor progress.
 - The current scope is the VM hosting each managed realm. Resources inside
   child realms, a user interface and financial charges are not implemented.
-
-## Element build
-
-```bash
-exordos build -f
-```
-
-Dependencies are Core, observability, ecosystem and the communal PostgreSQL
-cluster. The manifest creates a dedicated database and collector user. Set the
-`usage_core_exporter_instance` Variable Store value for this installation.
-The observability reader must allow `/api/v1/export`; ecosystem must export
-its existing `realm.read` permission. Grant `usage.interval.read` to the roles
-that should view statistics in their projects.
-
-## GitHub configuration
-
-The workflows follow `exordos_db`: unit tests and Ruff, element image build
-and publication, Markdown linting, and Dependabot updates. PostgreSQL/API
-tests also run against a PostgreSQL service in the tests workflow.
-
-The build workflow requires a runner labelled `self-hosted` and `vm`, and
-the `PUSH_CFG` repository secret containing the base64-encoded Exordos push
-configuration. CODEOWNERS uses `@exordos/code_owners`.
