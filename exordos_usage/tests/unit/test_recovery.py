@@ -56,8 +56,8 @@ def test_recovery_failure_stops_and_marks_unsuccessful(caplog):
 def test_nightly_timer_and_oneshot_service_use_venv_entrypoint():
     timer = (ROOT / "etc/systemd/exordos-usage-recovery.timer").read_text()
     service = (ROOT / "etc/systemd/exordos-usage-recovery.service").read_text()
-    install = (ROOT / "exordos/images/cp_install.sh").read_text()
-    bootstrap = (ROOT / "exordos/images/cp_bootstrap.sh").read_text()
+    install = (ROOT / "exordos/images/install.sh").read_text()
+    bootstrap = (ROOT / "exordos/images/bootstrap.sh").read_text()
     assert "OnCalendar=*-*-* 03:00:00 UTC" in timer
     assert "Persistent=true" in timer
     assert "Type=oneshot" in service

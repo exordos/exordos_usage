@@ -74,7 +74,7 @@ uv run exordos-usage-gservice --config-file /etc/exordos_usage/exordos_usage.con
 
 Migrations use `MigrationStep`, stable UUIDs, dependencies and
 `upgrade`/`downgrade`; RestAlchemy records applied steps in `ra_migrations`.
-The element's configuration hook runs `cp_bootstrap.sh` to apply both sets of
+The element's configuration hook runs `bootstrap.sh` to apply both sets of
 migrations before restarting the systemd services.
 
 ## Stored data

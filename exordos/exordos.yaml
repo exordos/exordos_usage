@@ -35,6 +35,6 @@ build:
         - name: usage
           format: zst
           profile: exordos_base
-          script: images/cp_install.sh
+          script: images/install.sh
           override:
             disk_size: "6G"
