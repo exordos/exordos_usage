@@ -28,7 +28,10 @@ sudo ln -sf "$VENV_PATH/bin/exordos-usage-user-api" /usr/bin/exordos-usage-user-
 sudo ln -sf "$VENV_PATH/bin/exordos-usage-gservice" /usr/bin/exordos-usage-gservice
 sudo ln -sf "$VENV_PATH/bin/exordos-usage-openapi-spec" /usr/bin/exordos-usage-openapi-spec
 
+sudo ln -sf "$VENV_PATH/bin/exordos-usage-recovery" /usr/bin/exordos-usage-recovery
+
 sudo install -d -m 700 /etc/exordos_usage /etc/exordos_usage/exordos_usage.d
 sudo cp "$USAGE_ROOT/etc/exordos_usage/logging.yaml" /etc/exordos_usage/
 sudo cp "$USAGE_ROOT/etc/systemd/"exordos-usage-*.service /etc/systemd/system/
-sudo systemctl enable exordos-usage-user-api exordos-usage-gservice
+sudo cp "$USAGE_ROOT/etc/systemd/exordos-usage-recovery.timer" /etc/systemd/system/
+sudo systemctl enable exordos-usage-user-api exordos-usage-gservice exordos-usage-recovery.timer

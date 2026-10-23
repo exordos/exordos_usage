@@ -51,6 +51,7 @@ def test_python_options_read_rendered_template(tmp_path, monkeypatch):
     assert conf.db.connection_url == values["DB_CONNECTION_URL"]
     assert conf.victoria.password == "vm%secret"
     assert conf.ecosystem.password == "eco-secret"
+    assert conf.recovery.lookback_days == 7
     assert conf.worker.window_seconds == 300
     assert conf.user_api.bind_host == "0.0.0.0"
     assert conf.iam.iam_endpoint == values["IAM_ENDPOINT"]

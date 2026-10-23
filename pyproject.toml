@@ -43,6 +43,7 @@ test = ["pytest>=8.0.0,<10.0.0", "ruff>=0.14.0,<1.0.0", "PyYAML>=6.0.2,<7.0.0", 
 exordos-usage-openapi-spec = "exordos_usage.cmd.openapi_spec:main"
 exordos-usage-user-api = "exordos_usage.cmd.user_api:main"
 exordos-usage-gservice = "exordos_usage.cmd.gservice:main"
+exordos-usage-recovery = "exordos_usage.cmd.recovery:main"
 
 [build-system]
 requires = [

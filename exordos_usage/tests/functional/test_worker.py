@@ -38,7 +38,6 @@ def collector(dsn):
             window_seconds=300,
             delay_seconds=120,
             poll_seconds=60,
-            retry_seconds=3600,
             gap_seconds=45,
         ),
         ecosystem=SimpleNamespace(
@@ -138,3 +137,24 @@ def test_collection_selects_historical_nodes_after_realm_removal(dsn):
         assert worker.victoria.samples.call_args.args[2] == {
             UUID(binding["resource_uuid"])
         }
+
+
+def test_forward_collector_does_not_retry_historical_incomplete_windows(dsn):
+    worker = collector(dsn)
+    b = {
+        "resource_uuid": str(uuid4()),
+        "realm_uuid": str(uuid4()),
+        "project_id": str(uuid4()),
+        "source_realm_uuid": None,
+    }
+    with contexts.Context().session_manager() as conn:
+        store = Store(conn, 300)
+        store.observe(START, [b])
+        store.observe(START + timedelta(hours=1), [b], max_observation_gap=7200)
+        store.save_window(
+            START + timedelta(minutes=55), START + timedelta(hours=1), {}, 45000
+        )
+    now = START + timedelta(hours=1, minutes=1)
+    worker.ecosystem.bindings.return_value = now, [b]
+    worker.tick(now=now)
+    worker.victoria.samples.assert_not_called()

@@ -84,21 +84,6 @@ class Worker(basic.BasicService):
                 if end > deadline or end > observed:
                     break
                 self._collect(store, start, end)
-        with contexts.Context().session_manager() as conn:
-            pending = conn.execute(
-                "SELECT DISTINCT window_start FROM usage_intervals"
-                " WHERE NOT complete AND window_start >= %s"
-                " ORDER BY window_start LIMIT 12",
-                (now - timedelta(seconds=settings.retry_seconds),),
-            ).fetchall()
-        for row in pending:
-            with contexts.Context().session_manager() as conn:
-                store = Store(conn, settings.window_seconds)
-                if not store.lock():
-                    return
-                self._collect(
-                    store, row["window_start"], row["window_start"] + store.window
-                )
 
     def _collect(self, store, start, end) -> None:
         margin = self.conf.worker.gap_seconds * 1000

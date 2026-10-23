@@ -154,7 +154,8 @@ resources:
           delay_seconds = 120
           gap_seconds = 45
           poll_seconds = 60
-          retry_seconds = 3600
+          [recovery]
+          lookback_days = 7
           [logging]
           config = logging.yaml
           [iam]

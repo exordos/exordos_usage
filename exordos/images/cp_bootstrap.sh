@@ -27,3 +27,5 @@ SDK_MIGRATIONS="$("$USAGE_ROOT/.venv/bin/python3" -c 'import gcl_sdk; print(gcl_
 "$USAGE_ROOT/.venv/bin/ra-apply-migration" \
     --config-file "$SERVICE_CONFIG" --path "$USAGE_ROOT/migrations"
 systemctl restart exordos-usage-user-api exordos-usage-gservice
+
+systemctl enable --now exordos-usage-recovery.timer

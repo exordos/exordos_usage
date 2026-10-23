@@ -79,6 +79,7 @@ CREATE TABLE usage_intervals (
 """,
             """\
 CREATE INDEX usage_interval_period ON usage_intervals(period_start, period_end);
+CREATE INDEX usage_interval_window ON usage_intervals(binding, window_start);
 """,
         ]
         expressions.append(

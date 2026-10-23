@@ -28,8 +28,9 @@ worker_opts = [
     cfg.IntOpt("delay_seconds", default=120, min=0),
     cfg.IntOpt("gap_seconds", default=45, min=1),
     cfg.IntOpt("poll_seconds", default=60, min=1),
-    cfg.IntOpt("retry_seconds", default=3600, min=0),
 ]
+recovery_opts = [cfg.IntOpt("lookback_days", default=7, min=1)]
+
 victoria_opts = [
     cfg.StrOpt("endpoint", required=True),
     cfg.StrOpt("username", required=True),
@@ -53,6 +54,7 @@ def register_opts(conf=CONF):
     config_opts.register_postgresql_db_opts(conf)
     iam_opts.register_iam_cli_opts(conf)
     conf.register_cli_opts(worker_opts, "worker")
+    conf.register_cli_opts(recovery_opts, "recovery")
     conf.register_cli_opts(victoria_opts, "victoria")
     conf.register_cli_opts(ecosystem_opts, "ecosystem")
     conf.register_cli_opts(api_opts, "user_api")

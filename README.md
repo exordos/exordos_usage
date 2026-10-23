@@ -174,3 +174,29 @@ measurement is `null`; `status` is `partial` if some are available and
 `observed_at` is the snapshot evaluation time. Upstream failures return 503.
 Live measurements are read from VictoriaMetrics and are not stored as billing
 intervals.
+
+### Nightly recovery
+
+`exordos-usage-recovery.timer` runs a separate one-shot worker daily at
+03:00 UTC. `Persistent=true` runs a missed activation after the timer restarts.
+The main collector handles forward collection only.
+
+The recovery worker searches the last seven days for missing metrics,
+incomplete intervals and entirely missing windows within recorded ownership.
+It preserves complete intervals and the forward collection checkpoint. Its
+VictoriaMetrics requests run outside the collector's database lock. Failed
+windows do not block later ones; they are retried on the next daily run.
+The journal summary reports repaired, incomplete, failed and skipped windows.
+Request failures make the service exit unsuccessfully; missing source samples
+remain incomplete. Neither case causes continuous retries.
+
+Set `[recovery] lookback_days` to change the horizon; keep it within the source
+retention (currently 30 days on stage). Periods without recorded ownership
+are not attributed retrospectively. Recovering them needs authoritative
+historical ownership events.
+
+```bash
+systemctl list-timers exordos-usage-recovery.timer
+systemctl start exordos-usage-recovery.service
+journalctl -u exordos-usage-recovery.service
+```

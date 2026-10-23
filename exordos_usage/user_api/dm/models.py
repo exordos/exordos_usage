@@ -99,7 +99,12 @@ class Store:
         self.conn = conn
         self.window = timedelta(seconds=window_seconds)
 
-    def lock(self) -> bool:
+    def lock(self, wait=False) -> bool:
+        if wait:
+            self.conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended('exordos_usage.collector', 0))"
+            )
+            return True
         return self.conn.execute(
             "SELECT pg_try_advisory_xact_lock("
             "hashtextextended('exordos_usage.collector', 0)) AS locked"
@@ -177,6 +182,45 @@ class Store:
     def next_window(self):
         return self._state().next_window
 
+    def recovery_windows(self, start, end):
+        """Find missing or incomplete windows only within known ownership."""
+        state = CollectorState.objects.get_one_or_none(
+            session=self.conn, filters={"id": filters.EQ(1)}
+        )
+        if state is None:
+            return []
+        end = min(end, state.next_window)
+        if end <= start:
+            return []
+        rows = self.conn.execute(
+            "SELECT DISTINCT w.start AS window_start FROM usage_bindings b "
+            "CROSS JOIN LATERAL generate_series("
+            "date_bin(%s, greatest(b.valid_from, %s), '1970-01-01'::timestamptz), "
+            "least(coalesce(b.valid_until, %s), %s) - interval '1 microsecond', %s"
+            ") AS w(start) "
+            "WHERE b.valid_from < %s AND (b.valid_until IS NULL OR b.valid_until > %s) "
+            "AND (b.valid_until IS NULL OR b.valid_until > b.valid_from) "
+            "AND w.start >= %s AND NOT EXISTS ("
+            "SELECT 1 FROM usage_intervals i "
+            "WHERE i.binding = b.uuid AND i.window_start = w.start AND i.metric = ANY(%s) "
+            "GROUP BY i.binding, i.window_start "
+            "HAVING count(DISTINCT i.metric) = %s AND bool_and(i.complete)) "
+            "ORDER BY w.start",
+            (
+                self.window,
+                start,
+                end,
+                end,
+                self.window,
+                end,
+                start,
+                start,
+                [metric for metric, _ in METRICS.values()],
+                len(METRICS),
+            ),
+        ).fetchall()
+        return [row["window_start"].astimezone(timezone.utc) for row in rows]
+
     def bindings_for_window(self, start, end):
         return UsageBinding.objects.get_all(
             session=self.conn,
@@ -189,13 +233,29 @@ class Store:
             ),
         )
 
-    def save_window(self, start, end, samples: dict, max_gap_ms: int) -> None:
-        """Replace a replayed window and advance the cursor in the same transaction."""
+    def save_window(
+        self, start, end, samples: dict, max_gap_ms: int, repair=False
+    ) -> None:
+        """Store a window atomically; recovery preserves complete rows and the cursor."""
+        if repair and end > self._state().next_window:
+            raise ValueError("Recovery cannot advance the collection checkpoint")
         bindings = self.bindings_for_window(start, end)
         intervals = UsageInterval.objects.get_all(
             session=self.conn, filters={"window_start": filters.EQ(start)}
         )
-        self.conn.batch_delete(intervals)
+        retained = {
+            (
+                interval.binding.uuid,
+                interval.metric,
+                interval.period_start,
+                interval.period_end,
+            )
+            for interval in intervals
+            if repair and interval.complete
+        }
+        self.conn.batch_delete(
+            [interval for interval in intervals if not repair or not interval.complete]
+        )
         for binding in bindings:
             left = max(start, binding.valid_from)
             right = min(end, binding.valid_until or end)
@@ -203,6 +263,8 @@ class Store:
             if milliseconds(right) - milliseconds(left) <= 0:
                 continue
             for raw, (metric, unit) in METRICS.items():
+                if (binding.uuid, metric, left, right) in retained:
+                    continue
                 result = integrate(
                     samples.get((str(binding.resource_uuid), raw), []),
                     milliseconds(left),
@@ -222,6 +284,7 @@ class Store:
                     complete=result.complete,
                     calculation_version=CALCULATION_VERSION,
                 ).insert(session=self.conn)
-        state = self._state()
-        state.next_window = max(state.next_window, end)
-        state.update(session=self.conn)
+        if not repair:
+            state = self._state()
+            state.next_window = max(state.next_window, end)
+            state.update(session=self.conn)
