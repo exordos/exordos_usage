@@ -1,0 +1,70 @@
+[project]
+name = "exordos_usage"
+dynamic = ["version"]
+authors = [{name = "Genesis Corporation", email = "mail@gmelikov.ru"}]
+description = "Exordos resource usage collection and history"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "PyYAML>=6.0.2,<7.0.0", # MIT
+    "psycopg[binary]>=3.2.0,<4.0.0", # LGPL-3.0
+    "requests>=2.32.3,<3.0.0", # Apache-2.0
+    "gcl_iam>=1.4.0,<2.0.0", # Apache-2.0
+    "gcl_sdk>=3.6.0,<4.0.0", # Apache-2.0
+    "WebOb>=1.8.9,<2.0.0", # MIT
+    "restalchemy>=16.0.1,<17.0.0", # Apache-2.0
+    "oslo.config>=3.22.2,<10.0.0", # Apache-2.0
+    "gcl_looper>=1.2.3,<2.0.0", # Apache-2.0
+    "bjoern>=3.2.2,<4.0.0", # BSD-3-Clause
+]
+
+[project.urls]
+homepage = "https://github.com/exordos/exordos_usage/"
+
+[project.optional-dependencies]
+dev = ["tox>=4.58.0,<5.0.0", "tox-uv>=1.0.0,<2.0.0", "pytest>=8.0.0,<10.0.0"]
+ruff = ["ruff>=0.14.0,<1.0.0"]
+test = ["pytest>=8.0.0,<10.0.0", "ruff>=0.14.0,<1.0.0", "PyYAML>=6.0.2,<7.0.0", "Jinja2>=3.1.5,<4.0.0"]
+
+[project.scripts]
+exordos-usage-openapi-spec = "exordos_usage.cmd.openapi_spec:main"
+exordos-usage-user-api = "exordos_usage.cmd.user_api:main"
+exordos-usage-gservice = "exordos_usage.cmd.gservice:main"
+
+[build-system]
+requires = [
+    "setuptools>=83.0.0,<84.0.0", # MIT
+    "setuptools_scm>=10.0.5,<11.0.0", # MIT
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["exordos_usage*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["exordos_usage/tests"]

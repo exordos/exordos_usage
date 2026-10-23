@@ -1,0 +1,134 @@
+#    Copyright 2026 Genesis Corporation.
+#
+#    All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
+import json
+from decimal import Decimal
+from unittest.mock import Mock, patch
+from uuid import uuid4
+
+import pytest
+import requests
+
+from exordos_usage.common.clients import Ecosystem, Victoria
+
+
+def test_export_keeps_raw_timestamps_and_merges_chunks():
+    node = str(uuid4())
+    row = {
+        "metric": {"__name__": "exordos_compute_node_cores", "node_uuid": node},
+        "timestamps": [1, 15001],
+        "values": [4, 8],
+    }
+    response = Mock()
+    response.iter_lines.return_value = [
+        json.dumps(row).encode(),
+        json.dumps(row).encode(),
+    ]
+    with patch("exordos_usage.common.clients.requests.get") as get:
+        get.return_value.__enter__.return_value = response
+        client = Victoria("http://vm", "reader", "secret", 'core"one')
+        samples = client.samples(1, 300000)
+        assert (
+            samples[(node, "exordos_compute_node_cores")]
+            == [(1, Decimal(4)), (15001, Decimal(8))] * 2
+        )
+        assert get.call_args.args[0] == "http://vm/api/v1/export"
+        assert get.call_args.kwargs["params"]["start"] == "0.001"
+        assert 'instance="core\\"one"' in client.selector
+
+
+def test_failed_ownership_request_is_not_empty_snapshot():
+    response = Mock()
+    response.raise_for_status.side_effect = requests.HTTPError()
+    with patch("exordos_usage.common.clients.requests.get", return_value=response):
+        with pytest.raises(requests.HTTPError):
+            Ecosystem("http://eco", Mock()).bindings()
+
+
+def test_expired_service_token_is_refreshed_once():
+    expired, current, auth = (
+        Mock(status_code=401),
+        Mock(status_code=200, headers={}),
+        Mock(),
+    )
+    current.json.return_value = []
+    with patch(
+        "exordos_usage.common.clients.requests.get", side_effect=[expired, current]
+    ):
+        assert Ecosystem("http://eco", auth).bindings()[1] == []
+        auth.authenticate.assert_called_once()
+
+
+def test_ambiguous_ownership_is_rejected():
+    item = realm()
+    response = Mock(status_code=200, headers={})
+    response.json.return_value = [item, item]
+    with patch("exordos_usage.common.clients.requests.get", return_value=response):
+        with pytest.raises(ValueError, match="Ambiguous"):
+            Ecosystem("http://eco", Mock()).bindings()
+
+
+def realm():
+    return {
+        "uuid": str(uuid4()),
+        "node_uuid": str(uuid4()),
+        "project_id": str(uuid4()),
+        "host_realm": None,
+        "kind": "MANAGED",
+    }
+
+
+def test_existing_realms_api_reads_all_pages():
+    first, second = realm(), realm()
+    page1 = Mock(status_code=200, headers={"X-Pagination-Marker": first["uuid"]})
+    page1.json.return_value = [first]
+    page2 = Mock(status_code=200, headers={})
+    page2.json.return_value = [second]
+    with patch(
+        "exordos_usage.common.clients.requests.get", side_effect=[page1, page2]
+    ) as get:
+        observed, rows = Ecosystem("http://eco", Mock()).bindings()
+        assert observed.utcoffset().total_seconds() == 0
+        assert len(rows) == 2
+        assert get.call_args.args[0] == "http://eco/v1/realms/"
+        assert get.call_args.kwargs["params"]["page_marker"] == first["uuid"]
+        assert set(rows[0]) == {
+            "realm_uuid",
+            "resource_uuid",
+            "project_id",
+            "source_realm_uuid",
+        }
+
+
+def test_failed_second_page_does_not_return_partial_snapshot():
+    first = realm()
+    response = Mock(status_code=200, headers={"X-Pagination-Marker": first["uuid"]})
+    response.json.return_value = [first]
+    with patch(
+        "exordos_usage.common.clients.requests.get",
+        side_effect=[response, requests.Timeout()],
+    ):
+        with pytest.raises(requests.Timeout):
+            Ecosystem("http://eco", Mock()).bindings()
+
+
+def test_repeated_page_marker_is_rejected():
+    marker = str(uuid4())
+    response = Mock(status_code=200, headers={"X-Pagination-Marker": marker})
+    response.json.return_value = []
+    with patch("exordos_usage.common.clients.requests.get", return_value=response):
+        with pytest.raises(ValueError, match="Repeated"):
+            Ecosystem("http://eco", Mock()).bindings()

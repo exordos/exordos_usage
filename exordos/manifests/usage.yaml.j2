@@ -1,0 +1,201 @@
+#    Copyright 2026 Genesis Corporation.
+#
+#    All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+name: usage
+description: "Resource usage collection and history"
+schema_version: 1
+version: "{{ version }}"
+api_version: v1
+
+requirements:
+  core:
+    from_version: "0.0.0"
+  observability:
+    from_version: "0.0.0"
+  exordos_ecosystem:
+    from_version: "0.0.0"
+  communal_pg_cluster:
+    from_version: "0.0.0"
+
+resources:
+  $core.secret.passwords:
+    usage_db_password:
+      name: usage_db_password
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+    usage_service_password:
+      name: usage_service_password
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      constructor:
+        kind: plain
+      method: AUTO_HEX
+
+  $core.iam.users:
+    usage_collector:
+      username: usage
+      first_name: Usage
+      last_name: Collector
+      email: noreply+usage@exordos.com
+      password: $core.secret.passwords.$usage_service_password:value
+
+  $core.iam.roles:
+    usage_collector:
+      name: usage_collector
+      project_id: null
+    usage_viewer:
+      name: usage_viewer
+      project_id: null
+
+  $core.iam.permissions:
+    usage_interval_read:
+      name: usage.interval.read
+
+  $core.iam.permissionbinding:
+    usage_collector_realm_read:
+      role: $core.iam.roles.$usage_collector:uuid
+      permission: $usage.imports.$realm_read:uuid
+      project_id: null
+    usage_viewer_interval_read:
+      role: $core.iam.roles.$usage_viewer:uuid
+      permission: $core.iam.permissions.$usage_interval_read:uuid
+      project_id: null
+
+  $core.iam.rolebinding:
+    usage_collector_global:
+      role: $core.iam.roles.$usage_collector:uuid
+      user: $core.iam.users.$usage_collector:uuid
+      project: null
+
+  $usage.imports.$pg.users:
+    usage_db_user:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: usage_db_user
+      password: $core.secret.passwords.$usage_db_password:value
+      instance: $usage.imports.$pg:uuid
+
+  $usage.imports.$pg.databases:
+    usage_db:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      name: usage
+      owner: $dbaas.types.postgres.instances.$cluster_pg.users.$usage_db_user:uuid
+      instance: $usage.imports.$pg:uuid
+
+  $core.vs.variables:
+    exporter_instance:
+      name: usage_core_exporter_instance
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      setter:
+        kind: selector
+        selector_strategy: latest
+
+  $core.compute.nodes:
+    usage_cp:
+      name: usage-cp
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      cores: 1
+      ram: 1024
+      disk_spec:
+        kind: disks
+        disks:
+          - size: 6
+            image: "{{ images.usage }}"
+            label: root
+
+  $core.config.configs:
+    usage_config:
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      path: /etc/exordos_usage/exordos_usage.conf
+      target:
+        kind: node
+        node: $core.compute.nodes.$usage_cp:uuid
+      on_change:
+        kind: shell
+        command: >-
+          chmod 600 /etc/exordos_usage/exordos_usage.conf &&
+          /opt/exordos_usage/exordos/images/cp_bootstrap.sh
+      body:
+        kind: text
+        content: |
+          f"[db]
+          connection_url = postgresql://usage_db_user:{$core.secret.passwords.$usage_db_password:value}@{$usage.imports.$pg:index(ipsv4, 0)}/usage
+          [victoria]
+          endpoint = {$usage.imports.$victoria:metrics_endpoint}
+          username = {$usage.imports.$victoria:vmauth:username}
+          password = {$usage.imports.$victoria:vmauth:password}
+          exporter_instance = {$core.vs.variables.$exporter_instance:value}
+          [ecosystem]
+          endpoint = http://{$usage.imports.$ecosystem_cp:default_network:ipv4}:8080
+          core_endpoint = http://core.local.genesis-core.tech/api/core
+          username = {$core.iam.users.$usage_collector:username}
+          password = {$core.secret.passwords.$usage_service_password:value}
+          host_realm =
+          [worker]
+          window_seconds = 300
+          delay_seconds = 120
+          gap_seconds = 45
+          poll_seconds = 60
+          retry_seconds = 3600
+          [logging]
+          config = logging.yaml
+          [iam]
+          iam_endpoint = http://core.local.genesis-core.tech/api/core/v1/iam/clients/{$usage.imports.$iam_client_uuid:value}
+          audience = {$usage.imports.$iam_client_id:value}
+          hs256_jwks_decryption_key = {$usage.imports.$jwks_key:value}
+          [user_api]
+          bind_host = 0.0.0.0
+          bind_port = 8080
+          workers = 2"
+
+imports:
+  pg:
+    element: $communal_pg_cluster
+    kind: resource
+    link: $dbaas.types.postgres.instances.$cluster_pg
+  victoria:
+    element: $observability
+    kind: resource
+    link: $victoriaaas.types.victoria.instances.$victoria
+  ecosystem_cp:
+    element: $exordos_ecosystem
+    kind: resource
+    link: $core.compute.nodes.$ecosystem_cp
+  realm_read:
+    element: $exordos_ecosystem
+    kind: resource
+    link: $core.iam.permissions.$eco_realm_read
+  iam_client_uuid:
+    element: $core
+    kind: resource
+    link: $core.vs.variables.$iam_default_client_uuid
+  iam_client_id:
+    element: $core
+    kind: resource
+    link: $core.vs.variables.$iam_default_client_id
+  jwks_key:
+    element: $core
+    kind: resource
+    link: $core.vs.variables.$hs256_jwks_encryption_key
+
+exports:
+  usage_cp:
+    link: $core.compute.nodes.$usage_cp
+  viewer_role:
+    link: $core.iam.roles.$usage_viewer
+  interval_read:
+    link: $core.iam.permissions.$usage_interval_read
+  exporter_instance:
+    link: $core.vs.variables.$exporter_instance

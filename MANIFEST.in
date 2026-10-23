@@ -1,0 +1,5 @@
+include LICENSE
+include README.md
+include migrations/*.py
+recursive-include etc *.j2 *.yaml *.service
+recursive-include exordos *.yaml *.j2 *.sh
