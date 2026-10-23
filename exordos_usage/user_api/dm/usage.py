@@ -14,7 +14,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""Allocation integration from raw samples, without query lookback filling."""
+"""Resource consumption from measured samples, without filling gaps."""
 
 import enum
 from dataclasses import dataclass
@@ -27,12 +27,46 @@ class UsageUnit(str, enum.Enum):
     BYTE_SECONDS = "byte_seconds"
 
 
-METRICS = {
+ALLOCATION_METRICS = {
     "exordos_compute_node_cores": ("cpu_allocated", UsageUnit.VCPU_SECONDS.value),
     "exordos_compute_node_ram_bytes": ("ram_allocated", UsageUnit.BYTE_SECONDS.value),
     "exordos_compute_node_disk_bytes": ("disk_allocated", UsageUnit.BYTE_SECONDS.value),
 }
+METRICS = ALLOCATION_METRICS | {
+    "cpu_used": ("cpu_used", UsageUnit.VCPU_SECONDS.value),
+    "ram_used": ("ram_used", UsageUnit.BYTE_SECONDS.value),
+}
 CALCULATION_VERSION = 1
+
+
+@dataclass
+class Segments:
+    """Measured rates with explicit bounds; never fill gaps between segments."""
+
+    values: list[tuple[int, int, Decimal]]
+
+
+def integrate_segments(samples, start, end):
+    quantity, covered, previous_end = Decimal(0), 0, None
+    for left, right, value in sorted(samples.values):
+        if right <= left or (previous_end is not None and left < previous_end):
+            raise ValueError("Invalid or overlapping measured segments")
+        previous_end = right
+        if not value.is_finite() or value < 0:
+            continue
+        length = max(0, min(right, end) - max(left, start))
+        quantity += value * Decimal(length) / 1000
+        covered += length
+    return Integral(quantity, covered, end - start)
+
+
+def sample_value(value):
+    """VictoriaMetrics exports stale/non-finite samples as JSON null."""
+    return Decimal("NaN") if value is None else Decimal(str(value))
+
+
+def same_sample(left, right):
+    return (left.is_nan() and right.is_nan()) or left == right
 
 
 def utc(value: str) -> datetime:
@@ -61,7 +95,10 @@ class Integral:
 
 
 def integrate(
-    samples: list[tuple[int, Decimal]], start: int, end: int, max_gap_ms: int
+    samples: list[tuple[int, Decimal]] | Segments,
+    start: int,
+    end: int,
+    max_gap_ms: int,
 ) -> Integral:
     """Hold left values only between two finite samples within the gap bound.
 
@@ -71,9 +108,11 @@ def integrate(
     """
     if end <= start or max_gap_ms <= 0:
         raise ValueError("Invalid integration interval")
+    if isinstance(samples, Segments):
+        return integrate_segments(samples, start, end)
     unique = {}
     for timestamp, value in samples:
-        if timestamp in unique and unique[timestamp] != value:
+        if timestamp in unique and not same_sample(unique[timestamp], value):
             raise ValueError("Conflicting samples at the same timestamp")
         unique[timestamp] = value
     points = sorted(unique.items())

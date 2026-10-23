@@ -106,7 +106,15 @@ def test_failed_metrics_preserves_observation_and_does_not_advance_cursor(dsn):
     worker.tick(now=START + timedelta(seconds=480))
     with contexts.Context().session_manager() as conn:
         rows = UsageInterval.objects.get_all(session=conn)
-        assert len(rows) == 3 and all(row.quantity == 1200 for row in rows)
+        assert len(rows) == 5
+        assert all(
+            row.quantity == 1200 for row in rows if row.metric.endswith("_allocated")
+        )
+        assert all(
+            row.covered_ms == 0 and not row.complete
+            for row in rows
+            if row.metric.endswith("_used")
+        )
         assert Store(conn, 300).next_window() == START + timedelta(seconds=300)
 
 

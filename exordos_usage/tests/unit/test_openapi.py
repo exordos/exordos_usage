@@ -66,3 +66,13 @@ def test_current_utilization_contract_is_published():
     assert spec["components"]["schemas"]["UsageCurrent"]["properties"]["cpu"][
         "nullable"
     ]
+
+
+def test_actual_usage_metrics_are_published():
+    spec = openapi.build()
+    metric = spec["components"]["schemas"]["UsageMetric"]["properties"]["metric"]
+    assert {"cpu_used", "ram_used"} <= set(metric["enum"])
+    for view in ("summary", "timeseries", "breakdown"):
+        params = spec["paths"][f"/v1/usage/{view}/"]["get"]["parameters"]
+        selected = next(p for p in params if p["name"] == "metric")
+        assert {"cpu_used", "ram_used"} <= set(selected["schema"]["enum"])

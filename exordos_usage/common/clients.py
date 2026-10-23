@@ -18,13 +18,15 @@
 
 import json
 import math
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
 import requests
 
-from exordos_usage.user_api.dm.usage import METRICS
+from exordos_usage.common.actual import actual_samples
+from exordos_usage.user_api.dm.usage import ALLOCATION_METRICS, sample_value
 
 
 class Ecosystem:
@@ -93,18 +95,8 @@ class Victoria:
         self.endpoint = endpoint.rstrip("/")
         self.auth = (username, password)
 
-    def samples(self, start_ms: int, end_ms: int, resource_uuids) -> dict:
-        nodes = {str(UUID(str(node))) for node in resource_uuids}
-        if not nodes:
-            return {}
-        selector = (
-            '{__name__=~"'
-            + "|".join(METRICS)
-            + '",node_uuid=~'
-            + json.dumps("|".join(sorted(nodes)))
-            + "}"
-        )
-        result = {}
+    def export(self, selector, start_ms, end_ms):
+        rows = []
         with requests.get(
             self.endpoint + "/api/v1/export",
             params={
@@ -121,19 +113,53 @@ class Victoria:
                 if not line:
                     continue
                 row = json.loads(line, parse_float=Decimal)
-                labels = row["metric"]
-                metric = labels["__name__"]
-                if metric not in METRICS:
-                    raise ValueError("Unexpected metric in export")
-                node = str(UUID(labels["node_uuid"]))
-                if node not in nodes:
-                    raise ValueError("Unexpected node in export")
-                values, timestamps = row["values"], row["timestamps"]
-                if len(values) != len(timestamps):
+                if len(row["values"]) != len(row["timestamps"]):
                     raise ValueError("Invalid export sample arrays")
+                rows.append(row)
+        return rows
+
+    def samples(
+        self, start_ms: int, end_ms: int, resource_uuids, max_gap_ms=45000
+    ) -> dict:
+        nodes = {str(UUID(str(node))) for node in resource_uuids}
+        if not nodes:
+            return {}
+        selector = (
+            '{__name__=~"'
+            + "|".join([*ALLOCATION_METRICS, "exordos_compute_node_info"])
+            + '",node_uuid=~'
+            + json.dumps("|".join(sorted(nodes)))
+            + "}"
+        )
+        result, identities = {}, []
+        for row in self.export(selector, start_ms, end_ms):
+            labels = row["metric"]
+            metric = labels["__name__"]
+            if metric not in {*ALLOCATION_METRICS, "exordos_compute_node_info"}:
+                raise ValueError("Unexpected metric in export")
+            node = str(UUID(labels["node_uuid"]))
+            if node not in nodes:
+                raise ValueError("Unexpected node in export")
+            if metric == "exordos_compute_node_info":
+                identities.append(row)
+            else:
                 result.setdefault((node, metric), []).extend(
-                    (int(t), Decimal(str(v))) for t, v in zip(timestamps, values)
+                    (int(t), sample_value(v))
+                    for t, v in zip(row["timestamps"], row["values"])
                 )
+        hosts = {row["metric"]["hostname"] for row in identities}
+        if hosts:
+            # Escape hostnames as literal regex alternatives before encoding PromQL.
+            instance = json.dumps("|".join(re.escape(host) for host in sorted(hosts)))
+            selector = [
+                'node_cpu_seconds_total{mode="idle",job="node_exporter",instance=~'
+                + instance
+                + "}",
+                '{__name__=~"node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes",'
+                'job="node_exporter",instance=~' + instance + "}",
+            ]
+            rows = self.export(selector, start_ms, end_ms)
+            result.update(actual_samples(identities, rows, max_gap_ms))
         return result
 
     def query(self, expression: str, now: datetime) -> list:

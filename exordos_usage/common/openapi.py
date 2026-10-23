@@ -92,13 +92,19 @@ def add_report_specs(spec):
         "properties": {
             "metric": {
                 "type": "string",
-                "enum": ["cpu_allocated", "ram_allocated", "disk_allocated"],
+                "enum": [
+                    "cpu_allocated",
+                    "ram_allocated",
+                    "disk_allocated",
+                    "cpu_used",
+                    "ram_used",
+                ],
             },
             "unit": {"type": "string", "enum": [unit.value for unit in UsageUnit]},
             "quantity": {
                 "type": "string",
                 "nullable": True,
-                "description": "Exact decimal quantity; null when no samples cover the period.",
+                "description": "Exact decimal quantity; null when no samples cover the period. cpu_used is busy core-seconds from idle counter deltas; ram_used is (MemTotal minus MemAvailable) integrated in byte-seconds. Allocated metrics describe provisioned capacity, independently of actual usage.",
             },
             "covered_ms": {
                 "type": "integer",
@@ -149,7 +155,7 @@ def add_report_specs(spec):
             (
                 "metric",
                 metric["properties"]["metric"],
-                "Return one metric; omitted returns all three.",
+                "Return one metric; omitted returns all allocated and actual usage metrics.",
             ),
         )
     ]
@@ -226,7 +232,7 @@ def add_report_specs(spec):
             {
                 "summary": f"Read usage {view}",
                 "operationId": f"Get_usage_{view}",
-                "description": "Requires usage.interval.read. Quantities describe allocated resources over time, not instantaneous CPU utilization. UTC range up to 31 days, on five-minute boundaries. Missing data is never zero-filled. Complete coverage refers only to observed ownership; attribution before the first observation is unknown. Stored windows may be repaired later.",
+                "description": "Requires usage.interval.read. Quantities integrate allocated capacity or actual CPU and memory usage over time; these are not instantaneous utilization percentages. UTC range up to 31 days, on five-minute boundaries. Missing data is never zero-filled. Complete coverage refers only to observed ownership; attribution before the first observation is unknown. Stored windows may be repaired later.",
                 "parameters": params,
                 "security": [{"bearerAuth": []}],
                 "responses": {

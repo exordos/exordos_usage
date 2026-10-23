@@ -90,7 +90,7 @@ def test_recovers_old_missing_metrics_and_entire_windows_without_duplicates(dsn)
     assert result == {"repaired": 2, "incomplete": 0, "failed": 0, "skipped": 0}
     with contexts.Context().session_manager() as conn:
         rows = UsageInterval.objects.get_all(session=conn)
-        assert len(rows) == 6 and all(
+        assert len(rows) == 10 and all(
             row.complete and row.quantity == 1200 for row in rows
         )
         assert Store(conn, 300).next_window() == START + WINDOW * 2
@@ -191,7 +191,7 @@ def test_fetch_does_not_hold_collector_lock(dsn):
     prepare(b)
     recovery = worker()
 
-    def fetch(*args):
+    def fetch(*args, **kwargs):
         with contexts.Context().session_manager() as conn:
             assert Store(conn, 300).lock()
         return samples(b, START)
@@ -205,7 +205,7 @@ def test_rechecks_completed_window_before_saving(dsn):
     prepare(b)
     recovery = worker()
 
-    def fetch(*args):
+    def fetch(*args, **kwargs):
         with contexts.Context().session_manager() as conn:
             Store(conn, 300).save_window(
                 START, START + WINDOW, samples(b, START), 45000

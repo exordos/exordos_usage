@@ -70,6 +70,7 @@ class RecoveryWorker(basic.BasicService):
                     milliseconds(start) - margin,
                     milliseconds(end) + margin,
                     {binding.resource_uuid for binding in bindings},
+                    max_gap_ms=margin,
                 )
                 with contexts.Context().session_manager() as conn:
                     store = Store(conn, seconds)

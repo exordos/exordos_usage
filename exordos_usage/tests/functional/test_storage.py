@@ -70,7 +70,7 @@ def test_replay_is_idempotent(dsn):
         cpu = next(row for row in rows if row.metric == "cpu_allocated")
         assert cpu.quantity == 1200
         assert cpu.complete
-        assert len(rows) == 3
+        assert len(rows) == 5
         assert store.next_window() == END
 
 
@@ -127,7 +127,7 @@ def test_failed_transaction_keeps_previous_data_and_cursor(dsn):
     with contexts.Context().session_manager() as conn:
         assert Store(conn, 300).next_window() == END
         rows = intervals_for_project(conn, b["project_id"])
-        assert len(rows) == 3
+        assert len(rows) == 5
         assert (
             next(row for row in rows if row.metric == "cpu_allocated")["quantity"]
             == 1200
@@ -190,7 +190,7 @@ def test_binding_is_generated_and_referenced_by_intervals(dsn):
         stored = UsageBinding.objects.get_one(session=session)
         assert isinstance(stored.uuid, UUID)
         intervals = UsageInterval.objects.get_all(session=session)
-        assert len(intervals) == 3
+        assert len(intervals) == 5
         assert all(isinstance(interval.binding, UsageBinding) for interval in intervals)
         assert all(interval.binding.uuid == stored.uuid for interval in intervals)
         assert all(

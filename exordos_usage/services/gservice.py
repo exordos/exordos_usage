@@ -94,6 +94,7 @@ class Worker(basic.BasicService):
                 binding.resource_uuid
                 for binding in store.bindings_for_window(start, end)
             },
+            max_gap_ms=margin,
         )
         store.save_window(start, end, samples, margin)
         LOG.info("Stored usage window %s to %s", start.isoformat(), end.isoformat())

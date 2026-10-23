@@ -176,7 +176,7 @@ def test_api_breakdown_paginates_groups_and_keeps_all_metrics(dsn):
     assert [item["realm_uuid"] for item in first.json["items"]] == [
         str(UUID(int=n)) for n in (1, 2)
     ]
-    assert all(len(item["metrics"]) == 3 for item in first.json["items"])
+    assert all(len(item["metrics"]) == 5 for item in first.json["items"])
     marker = first.headers["X-Pagination-Marker"]
     second = request(path + "&page_marker=" + marker)
     assert second.status_int == 200
@@ -234,3 +234,49 @@ def test_api_rejects_invalid_report_queries(dsn, view, params):
         headers={"Authorization": "Bearer " + token},
     ).get_response(app)
     assert response.status_int == 400, response.text
+
+
+def test_actual_consumption_is_stored_reported_and_recovered_separately(dsn):
+    from exordos_usage.common.actual import actual_samples
+    from exordos_usage.tests.unit.test_actual import identity, measurements
+
+    project = uuid4()
+    b = binding(project)
+    start_ms = milliseconds(START)
+    times = (start_ms, start_ms + 15000, start_ms + 30000)
+    observed = actual_samples(
+        [identity(node=b["resource_uuid"], times=times)],
+        measurements(times=times),
+        45000,
+    )
+    with contexts.Context().session_manager() as session:
+        store = Store(session, 300)
+        store.observe(START, [b])
+        # Simulate an already-collected window predating actual usage collection.
+        write_window(session, store, b)
+        session.execute(
+            "DELETE FROM usage_intervals WHERE metric IN ('cpu_used', 'ram_used')"
+        )
+        assert store.recovery_windows(START, START + timedelta(minutes=5)) == [START]
+        store.save_window(
+            START, START + timedelta(minutes=5), observed, 45000, repair=True
+        )
+        assert store.next_window() == START + timedelta(minutes=5)
+        summary, _ = read(session, project)
+        metrics = {m["metric"]: m for m in summary["items"]}
+        assert Decimal(metrics["cpu_used"]["quantity"]) == Decimal("37.5")
+        assert Decimal(metrics["ram_used"]["quantity"]) == 5 * 1024**3 * 30
+        assert Decimal(metrics["cpu_allocated"]["quantity"]) == 1200
+        assert metrics["cpu_used"]["covered_ms"] == 30000
+        assert metrics["cpu_used"]["status"] == "partial"
+        series, _ = read(session, project, "timeseries", step="5m", metric="cpu_used")
+        assert Decimal(series["items"][0]["metrics"][0]["quantity"]) == Decimal("37.5")
+        assert series["items"][1]["metrics"][0]["quantity"] is None
+    app, token = authenticated_app(project)
+    for metric in ("cpu_used", "ram_used"):
+        url = f"/v1/usage/summary/?start=2026-10-22T10:00:00Z&end=2026-10-22T10:10:00Z&realm_uuid={b['realm_uuid']}&metric={metric}"
+        response = Request.blank(
+            url, headers={"Authorization": "Bearer " + token}
+        ).get_response(app)
+        assert response.status_int == 200, response.text
+        assert response.json["items"][0] == metrics[metric]
