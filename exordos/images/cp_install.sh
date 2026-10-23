@@ -20,7 +20,7 @@ USAGE_ROOT=/opt/exordos_usage
 VENV_PATH="$USAGE_ROOT/.venv"
 cd "$USAGE_ROOT"
 sudo apt-get update
-sudo apt-get install -y libev-dev
+sudo apt-get install -y libev-dev postgresql-client
 uv sync --frozen --no-dev
 
 # Create links to the virtual environment commands.
