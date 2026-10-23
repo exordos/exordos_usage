@@ -61,6 +61,8 @@ def test_collector_has_only_existing_realm_read_permission():
 def test_secret_config_and_database_live_outside_root_image():
     doc = manifest()
     config = doc["resources"]["$core.config.configs"]["usage_config"]
+    assert config["mode"] == "0600"
+    assert "$core.vs.variables" not in doc["resources"]
     assert config["body"]["kind"] == "text"
     assert config["body"]["content"].startswith('f"')
     assert "chmod 600" in config["on_change"]["command"]

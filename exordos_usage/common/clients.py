@@ -69,7 +69,7 @@ class Ecosystem:
                     if item["project_id"]
                     else None,
                     "source_realm_uuid": str(UUID(item["host_realm"]))
-                    if item["host_realm"]
+                    if item.get("host_realm")
                     else None,
                 }
                 if binding["resource_uuid"] in seen:
@@ -88,28 +88,26 @@ class Ecosystem:
 
 
 class Victoria:
-    def __init__(
-        self, endpoint: str, username: str, password: str, exporter_instance: str
-    ):
-        if not exporter_instance:
-            raise ValueError("An explicit Core exporter instance is required")
+    def __init__(self, endpoint: str, username: str, password: str):
         self.endpoint = endpoint.rstrip("/")
         self.auth = (username, password)
-        # The selector isolates this Core from other producers in shared storage.
-        self.selector = (
+
+    def samples(self, start_ms: int, end_ms: int, resource_uuids) -> dict:
+        nodes = {str(UUID(str(node))) for node in resource_uuids}
+        if not nodes:
+            return {}
+        selector = (
             '{__name__=~"'
             + "|".join(METRICS)
-            + '",instance='
-            + json.dumps(exporter_instance)
+            + '",node_uuid=~'
+            + json.dumps("|".join(sorted(nodes)))
             + "}"
         )
-
-    def samples(self, start_ms: int, end_ms: int) -> dict:
         result = {}
         with requests.get(
             self.endpoint + "/api/v1/export",
             params={
-                "match[]": self.selector,
+                "match[]": selector,
                 "start": str(Decimal(start_ms) / 1000),
                 "end": str(Decimal(end_ms) / 1000),
             },
@@ -127,6 +125,8 @@ class Victoria:
                 if metric not in METRICS:
                     raise ValueError("Unexpected metric in export")
                 node = str(UUID(labels["node_uuid"]))
+                if node not in nodes:
+                    raise ValueError("Unexpected node in export")
                 values, timestamps = row["values"], row["timestamps"]
                 if len(values) != len(timestamps):
                     raise ValueError("Invalid export sample arrays")

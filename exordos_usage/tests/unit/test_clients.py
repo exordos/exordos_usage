@@ -39,15 +39,15 @@ def test_export_keeps_raw_timestamps_and_merges_chunks():
     ]
     with patch("exordos_usage.common.clients.requests.get") as get:
         get.return_value.__enter__.return_value = response
-        client = Victoria("http://vm", "reader", "secret", 'core"one')
-        samples = client.samples(1, 300000)
+        client = Victoria("http://vm", "reader", "secret")
+        samples = client.samples(1, 300000, [node])
         assert (
             samples[(node, "exordos_compute_node_cores")]
             == [(1, Decimal(4)), (15001, Decimal(8))] * 2
         )
         assert get.call_args.args[0] == "http://vm/api/v1/export"
         assert get.call_args.kwargs["params"]["start"] == "0.001"
-        assert 'instance="core\\"one"' in client.selector
+        assert 'node_uuid=~"' + node + '"' in get.call_args.kwargs["params"]["match[]"]
 
 
 def test_failed_ownership_request_is_not_empty_snapshot():
@@ -132,3 +132,21 @@ def test_repeated_page_marker_is_rejected():
     with patch("exordos_usage.common.clients.requests.get", return_value=response):
         with pytest.raises(ValueError, match="Repeated"):
             Ecosystem("http://eco", Mock()).bindings()
+
+
+def test_export_without_bindings_does_not_query_victoria():
+    with patch("exordos_usage.common.clients.requests.get") as get:
+        assert Victoria("http://vm", "reader", "secret").samples(0, 1, []) == {}
+        get.assert_not_called()
+
+
+def test_realms_without_host_realm_use_central_host():
+    item = realm()
+    del item["host_realm"]
+    response = Mock(status_code=200, headers={})
+    response.json.return_value = [item]
+    with patch("exordos_usage.common.clients.requests.get", return_value=response):
+        assert (
+            Ecosystem("http://eco", Mock()).bindings()[1][0]["source_realm_uuid"]
+            is None
+        )

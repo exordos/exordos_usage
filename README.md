@@ -53,11 +53,11 @@ Create `/etc/exordos_usage/exordos_usage.d` for additional `.conf` files.
 Keep the configuration private: it contains service and database credentials.
 
 Configure the database URL, VictoriaMetrics endpoint and reader credentials,
-the exact Core exporter `instance`, the ecosystem service credentials, and
+the ecosystem service credentials, and
 the IAM client endpoint, audience and JWKS key. The VictoriaMetrics reader
 must permit `/api/v1/export`. An empty `ecosystem.host_realm` selects the
-central host realm. For an element installation, set the
-`usage_core_exporter_instance` Variable Store value to that exporter instance.
+central host realm. Metrics are selected by node UUIDs from the recorded
+realm bindings.
 
 Apply SDK migrations first, then usage migrations, before starting services:
 

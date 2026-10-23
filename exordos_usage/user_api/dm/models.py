@@ -177,9 +177,8 @@ class Store:
     def next_window(self):
         return self._state().next_window
 
-    def save_window(self, start, end, samples: dict, max_gap_ms: int) -> None:
-        """Replace a replayed window and advance the cursor in the same transaction."""
-        bindings = UsageBinding.objects.get_all(
+    def bindings_for_window(self, start, end):
+        return UsageBinding.objects.get_all(
             session=self.conn,
             filters=filters.AND(
                 {"valid_from": filters.LT(end)},
@@ -189,6 +188,10 @@ class Store:
                 ),
             ),
         )
+
+    def save_window(self, start, end, samples: dict, max_gap_ms: int) -> None:
+        """Replace a replayed window and advance the cursor in the same transaction."""
+        bindings = self.bindings_for_window(start, end)
         intervals = UsageInterval.objects.get_all(
             session=self.conn, filters={"window_start": filters.EQ(start)}
         )

@@ -35,7 +35,6 @@ def worker():
                 endpoint="http://victoria",
                 username="usage",
                 password="test",
-                exporter_instance="core",
             ),
         )
     )
@@ -43,12 +42,13 @@ def worker():
 
 def test_failed_iteration_allows_next_collection(caplog):
     service = worker()
-    service.tick = Mock(side_effect=[RuntimeError("private details"), None])
+    service.tick = Mock(side_effect=[RuntimeError("collection failure details"), None])
     service._loop_iteration()
     service._loop_iteration()
     assert service.tick.call_count == 2
     assert "next tick will retry" in caplog.text
-    assert "private details" not in caplog.text
+    assert "collection failure details" in caplog.text
+    assert caplog.records[0].exc_info is not None
 
 
 def test_service_start_runs_collection_and_stops():

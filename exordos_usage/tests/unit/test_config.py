@@ -31,7 +31,6 @@ def test_python_options_read_rendered_template(tmp_path, monkeypatch):
         "VICTORIA_ENDPOINT": "http://vm",
         "VICTORIA_USERNAME": "reader",
         "VICTORIA_PASSWORD": "vm%secret",
-        "EXPORTER_INSTANCE": "core-one",
         "ECOSYSTEM_ENDPOINT": "http://eco",
         "ECOSYSTEM_USERNAME": "usage",
         "ECOSYSTEM_PASSWORD": "eco-secret",

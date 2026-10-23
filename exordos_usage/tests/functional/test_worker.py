@@ -18,7 +18,7 @@ from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import requests
@@ -52,7 +52,6 @@ def collector(dsn):
             endpoint="http://vm",
             username="reader",
             password="secret",
-            exporter_instance="core-one",
         ),
     )
     worker = Worker(conf)
@@ -121,3 +120,21 @@ def test_failed_realm_read_never_opens_database():
         with pytest.raises(requests.Timeout):
             worker.tick()
         connect_mock.assert_not_called()
+
+
+def test_collection_selects_historical_nodes_after_realm_removal(dsn):
+    worker = collector(dsn)
+    binding = {
+        "resource_uuid": str(uuid4()),
+        "realm_uuid": str(uuid4()),
+        "project_id": str(uuid4()),
+    }
+    with contexts.Context().session_manager() as conn:
+        store = Store(conn, 300)
+        store.observe(START, [binding], 120)
+        store.observe(START + timedelta(seconds=60), [], 120)
+        worker.victoria.samples.return_value = {}
+        worker._collect(store, START, START + timedelta(seconds=300))
+        assert worker.victoria.samples.call_args.args[2] == {
+            UUID(binding["resource_uuid"])
+        }

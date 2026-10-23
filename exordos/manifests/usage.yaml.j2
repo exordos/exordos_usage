@@ -94,14 +94,6 @@ resources:
       owner: $dbaas.types.postgres.instances.$cluster_pg.users.$usage_db_user:uuid
       instance: $usage.imports.$pg:uuid
 
-  $core.vs.variables:
-    exporter_instance:
-      name: usage_core_exporter_instance
-      project_id: "12345678-c625-4fee-81d5-f691897b8142"
-      setter:
-        kind: selector
-        selector_strategy: latest
-
   $core.compute.nodes:
     usage_cp:
       name: usage-cp
@@ -119,6 +111,7 @@ resources:
     usage_config:
       project_id: "12345678-c625-4fee-81d5-f691897b8142"
       path: /etc/exordos_usage/exordos_usage.conf
+      mode: "0600"
       target:
         kind: node
         node: $core.compute.nodes.$usage_cp:uuid
@@ -136,7 +129,6 @@ resources:
           endpoint = {$usage.imports.$victoria:metrics_endpoint}
           username = {$usage.imports.$victoria:vmauth:username}
           password = {$usage.imports.$victoria:vmauth:password}
-          exporter_instance = {$core.vs.variables.$exporter_instance:value}
           [ecosystem]
           endpoint = http://{$usage.imports.$ecosystem_cp:default_network:ipv4}:8080
           core_endpoint = http://core.local.genesis-core.tech/api/core
@@ -197,5 +189,3 @@ exports:
     link: $core.iam.roles.$usage_viewer
   interval_read:
     link: $core.iam.permissions.$usage_interval_read
-  exporter_instance:
-    link: $core.vs.variables.$exporter_instance

@@ -48,14 +48,13 @@ class Worker(basic.BasicService):
             conf.victoria.endpoint,
             conf.victoria.username,
             conf.victoria.password,
-            conf.victoria.exporter_instance,
         )
 
     def _iteration(self):
         try:
             self.tick()
         except Exception:
-            LOG.error("Collection failed; the next tick will retry")
+            LOG.exception("Collection failed; the next tick will retry")
 
     def tick(self, now=None) -> None:
         settings = self.conf.worker
@@ -104,7 +103,12 @@ class Worker(basic.BasicService):
     def _collect(self, store, start, end) -> None:
         margin = self.conf.worker.gap_seconds * 1000
         samples = self.victoria.samples(
-            milliseconds(start) - margin, milliseconds(end) + margin
+            milliseconds(start) - margin,
+            milliseconds(end) + margin,
+            {
+                binding.resource_uuid
+                for binding in store.bindings_for_window(start, end)
+            },
         )
         store.save_window(start, end, samples, margin)
         LOG.info("Stored usage window %s to %s", start.isoformat(), end.isoformat())

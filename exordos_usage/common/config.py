@@ -34,7 +34,6 @@ victoria_opts = [
     cfg.StrOpt("endpoint", required=True),
     cfg.StrOpt("username", required=True),
     cfg.StrOpt("password", required=True, secret=True),
-    cfg.StrOpt("exporter_instance", required=True),
 ]
 ecosystem_opts = [
     cfg.StrOpt("endpoint", required=True),
