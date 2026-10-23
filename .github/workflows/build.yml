@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+    branches-ignore:
+      - master
+    tags:
+      - '*'
+
+permissions:
+  contents: read
+
+jobs:
+  Build:
+    runs-on: [self-hosted, vm]
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    outputs:
+      version: ${{ steps.build_element.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Build Element
+        id: build_element
+        env:
+          PUSH_CFG: ${{ secrets.PUSH_CFG }}
+        run: |
+          set -euo pipefail
+          VERSION="$(exordos get-version .)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          exordos build "$(pwd)"
+          printf '%s' "$PUSH_CFG" | base64 -d > exordos/exordos.push.yaml
+          exordos push -c exordos/exordos.push.yaml -t local -f --latest
+
+  Test:
+    needs: Build
+    uses: exordos/exordos_ci/.github/workflows/element_realm_test.yml@master
+    with:
+      elements: usage
+      dependencies: dbaas communal_pg_cluster observability exordos_ecosystem
+      version: ${{ needs.Build.outputs.version }}
+      element-timeout: 600
+      overbook: true
+    secrets: inherit
