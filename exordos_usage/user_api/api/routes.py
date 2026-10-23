@@ -39,10 +39,16 @@ class BreakdownRoute(routes.Route):
     __allow_methods__ = (routes.FILTER,)
 
 
+class CurrentUsageRoute(routes.Route):
+    __controller__ = controllers.CurrentUsageController
+    __allow_methods__ = (routes.FILTER,)
+
+
 class UsageRoute(routes.Route):
     __controller__ = controllers.UsageRoutesController
     __allow_methods__ = (routes.FILTER,)
 
+    current = routes.route(CurrentUsageRoute)
     summary = routes.route(SummaryRoute)
     timeseries = routes.route(TimeseriesRoute)
     breakdown = routes.route(BreakdownRoute)

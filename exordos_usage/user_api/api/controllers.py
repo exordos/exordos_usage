@@ -14,15 +14,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from datetime import timedelta
+import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from gcl_iam import exceptions as iam_exceptions
 from gcl_iam import rules
+from oslo_config import cfg
 from restalchemy.api import controllers
 from restalchemy.common import contexts, exceptions
+from restalchemy.dm import filters as sql_filters
 
+from exordos_usage.common.clients import Victoria
 from exordos_usage.user_api.dm import reports
+from exordos_usage.user_api.dm.models import UsageBinding
 from exordos_usage.user_api.dm.usage import milliseconds, utc
 
 
@@ -149,3 +154,58 @@ class TimeseriesController(ReportController):
 
 class BreakdownController(ReportController):
     view = "breakdown"
+
+
+class CurrentUsageUnavailable(exceptions.RestAlchemyException):
+    code = 503
+    message = "Current resource usage is temporarily unavailable."
+
+
+class InvalidCurrentUsageQuery(exceptions.ValidationErrorException):
+    message = "Select a project and a valid realm_uuid."
+
+
+class CurrentUsageController(controllers.Controller):
+    def filter(self, filters, order_by=None):
+        """Read current CPU and memory utilization for a project realm."""
+        params = self.request.GET
+        if set(params) - {"project_id", "realm_uuid"} or any(
+            len(params.getall(key)) != 1 for key in params
+        ):
+            raise InvalidCurrentUsageQuery()
+        context = contexts.get_context()
+        try:
+            project = select_project(context.iam_context, params.get("project_id"))
+            realm = UUID(params["realm_uuid"])
+        except (ValueError, KeyError) as exc:
+            raise InvalidCurrentUsageQuery() from exc
+        # Resolve ownership before making any external metrics request.
+        bindings = UsageBinding.objects.get_all(
+            session=context.get_session(),
+            filters={
+                "project_id": sql_filters.EQ(project),
+                "realm_uuid": sql_filters.EQ(realm),
+                "valid_until": sql_filters.Is(None),
+            },
+        )
+        if not bindings:
+            raise exceptions.NotFoundError(path=self.request.path)
+        if len(bindings) != 1:
+            raise CurrentUsageUnavailable()
+        binding = bindings[0]
+        settings = cfg.CONF.victoria
+        try:
+            result = Victoria(
+                settings.endpoint, settings.username, settings.password
+            ).current(binding.resource_uuid, datetime.now(timezone.utc))
+        except Exception as exc:
+            logging.getLogger(__name__).exception(
+                "Failed to read current resource usage"
+            )
+            raise CurrentUsageUnavailable() from exc
+        return {
+            "project_id": str(project),
+            "realm_uuid": str(realm),
+            "resource_uuid": str(binding.resource_uuid),
+            **result,
+        }

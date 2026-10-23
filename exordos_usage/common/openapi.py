@@ -52,6 +52,7 @@ class UsageOpenApiEngine(engines.OpenApiEngine):
             },
         }
         add_report_specs(spec)
+        add_current_spec(spec)
         return spec
 
 
@@ -254,3 +255,85 @@ def add_report_specs(spec):
                     "description": "Present only when another page of groups is available.",
                 }
             }
+
+
+def add_current_spec(spec):
+    uuid = {"type": "string", "format": "uuid"}
+    percent = {"type": "number", "minimum": 0, "maximum": 100}
+
+    def measurement(properties):
+        return {
+            "type": "object",
+            "nullable": True,
+            "required": list(properties),
+            "properties": properties,
+        }
+
+    properties = {
+        "project_id": uuid,
+        "realm_uuid": uuid,
+        "resource_uuid": uuid,
+        "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Evaluation time of the current snapshot.",
+        },
+        "status": {"type": "string", "enum": ["available", "partial", "no_data"]},
+        "cpu": measurement(
+            {
+                "total_cores": {"type": "integer", "minimum": 1},
+                "used_cores": {"type": "number", "minimum": 0},
+                "utilization_percent": percent,
+            }
+        ),
+        "memory": measurement(
+            {
+                "total_bytes": {"type": "integer", "minimum": 1},
+                "used_bytes": {"type": "integer", "minimum": 0},
+                "utilization_percent": percent,
+            }
+        ),
+    }
+    spec["components"]["schemas"]["UsageCurrent"] = {
+        "type": "object",
+        "required": list(properties),
+        "properties": properties,
+    }
+    spec["paths"]["/v1/usage/current/"]["get"].update(
+        {
+            "summary": "Read current realm CPU and memory utilization",
+            "operationId": "Get_usage_current",
+            "description": "Requires usage.interval.read and an active realm binding in the selected project. CPU is averaged over one minute; memory is MemTotal minus MemAvailable. Totals are reported by the guest OS, so memory can be lower than allocated RAM. Samples older than 120 seconds are excluded. Missing metrics are null, never zero-filled. No historical usage intervals are written.",
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {"name": "realm_uuid", "in": "query", "required": True, "schema": uuid},
+                {
+                    "name": "project_id",
+                    "in": "query",
+                    "schema": uuid,
+                    "description": "Required for an unscoped token; inferred from a project token.",
+                },
+            ],
+            "responses": {
+                "200": {
+                    "description": "Current snapshot, possibly partial or unavailable due to absent samples.",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/UsageCurrent"}
+                        }
+                    },
+                },
+                "400": {"description": "Invalid realm or project query."},
+                "401": {"description": "Missing, invalid or expired token."},
+                "403": {
+                    "description": "Permission denied or project outside token scope."
+                },
+                "404": {
+                    "description": "No active realm binding in the selected project."
+                },
+                "503": {
+                    "description": "VictoriaMetrics unavailable or exporter identity ambiguous."
+                },
+            },
+        }
+    )

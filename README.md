@@ -92,6 +92,7 @@ created. Historical consumption remains attached to its original owner.
 
 | Endpoint | Result | Additional parameters |
 | --- | --- | --- |
+| `/v1/usage/current/` | Current CPU and memory utilization | Required `realm_uuid` |
 | `/v1/usage/summary/` | Totals by metric | None |
 | `/v1/usage/timeseries/` | UTC time buckets | `step=5m`, `1h` or `1d`; default `1h` |
 | `/v1/usage/breakdown/` | Totals by realm or resource | `group_by=realm` or `resource`; default `realm` |
@@ -130,3 +131,40 @@ output is `docs/openapi/openapi_user.yaml` and is not committed.
 - Reprocessing a window replaces its records atomically with cursor progress.
 - The current scope is the VM hosting each managed realm. Resources inside
   child realms, a user interface and financial charges are not implemented.
+
+### Current realm utilization
+
+```http
+GET /v1/usage/current/?realm_uuid=07808b78-3a77-42f2-93ed-ca9dedbac02c
+Authorization: Bearer <project-token>
+```
+
+The endpoint uses the same `usage.interval.read` permission and project scope
+as reports. An unscoped token must also specify `project_id`. Only an active
+realm binding in that project can be queried; otherwise the response is 404.
+
+CPU utilization is averaged over the last minute. Memory usage is
+`MemTotal - MemAvailable`. `cpu.total_cores` and `memory.total_bytes` describe
+what the guest OS sees; usable RAM may be below the allocated VM capacity.
+Node UUIDs resolve to node exporter instances through the `hostname` label of
+`exordos_compute_node_info`. Node exporter metrics must have `job=node_exporter`
+and `instance` equal to that hostname.
+
+```json
+{
+  "project_id": "3f72c68d-5a5d-40a0-ac8a-9747719f7da9",
+  "realm_uuid": "07808b78-3a77-42f2-93ed-ca9dedbac02c",
+  "resource_uuid": "09dd50f1-ed1d-4dcf-94cf-df22284c9686",
+  "observed_at": "2026-10-23T08:00:00Z",
+  "status": "available",
+  "cpu": {"total_cores": 4, "used_cores": 1.68, "utilization_percent": 42},
+  "memory": {"total_bytes": 8589934592, "used_bytes": 6012954214, "utilization_percent": 70}
+}
+```
+
+Samples older than 120 seconds are excluded. A missing CPU or memory
+measurement is `null`; `status` is `partial` if only one is available and
+`no_data` if both are missing. Actual zero utilization remains zero.
+`observed_at` is the snapshot evaluation time. Upstream failures return 503.
+Live measurements are read from VictoriaMetrics and are not stored as billing
+intervals.

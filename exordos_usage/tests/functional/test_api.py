@@ -45,7 +45,7 @@ def test_usage_catalog_lists_report_endpoints(dsn):
         "/v1/usage/", headers={"Authorization": "Bearer " + token}
     ).get_response(app)
     assert response.status_int == 200
-    assert set(response.json) == {"summary", "timeseries", "breakdown"}
+    assert set(response.json) == {"summary", "timeseries", "breakdown", "current"}
 
 
 def authenticated_app(project, scenario="own"):

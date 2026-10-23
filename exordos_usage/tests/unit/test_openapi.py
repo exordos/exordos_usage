@@ -53,3 +53,16 @@ def test_ui_report_contracts_are_published():
         "X-Pagination-Marker"
         in spec["paths"]["/v1/usage/breakdown/"]["get"]["responses"]["200"]["headers"]
     )
+
+
+def test_current_utilization_contract_is_published():
+    spec = openapi.build()
+    operation = spec["paths"]["/v1/usage/current/"]["get"]
+    assert operation["security"] == [{"bearerAuth": []}]
+    assert {p["name"] for p in operation["parameters"] if p.get("required")} == {
+        "realm_uuid"
+    }
+    assert "503" in operation["responses"]
+    assert spec["components"]["schemas"]["UsageCurrent"]["properties"]["cpu"][
+        "nullable"
+    ]

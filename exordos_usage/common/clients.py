@@ -17,6 +17,7 @@
 """Read-only adapters for ecosystem attribution and VictoriaMetrics export."""
 
 import json
+import math
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -133,4 +134,79 @@ class Victoria:
                 result.setdefault((node, metric), []).extend(
                     (int(t), Decimal(str(v))) for t, v in zip(timestamps, values)
                 )
+        return result
+
+    def query(self, expression: str, now: datetime) -> list:
+        response = requests.get(
+            self.endpoint + "/api/v1/query",
+            params={"query": expression, "time": now.timestamp()},
+            auth=self.auth,
+            timeout=(5, 10),
+        )
+        response.raise_for_status()
+        body = response.json()
+        if body.get("status") != "success" or body["data"]["resultType"] != "vector":
+            raise ValueError("Invalid VictoriaMetrics query response")
+        return body["data"]["result"]
+
+    def current(self, resource_uuid, now: datetime) -> dict:
+        # Instant queries may return old samples within the lookback window.
+        def fresh(selector):
+            return f"({selector}) and (time() - timestamp({selector}) <= 120)"
+
+        info = self.query(
+            fresh(
+                "exordos_compute_node_info{node_uuid="
+                + json.dumps(str(resource_uuid))
+                + "}"
+            ),
+            now,
+        )
+        result = {"observed_at": now, "status": "no_data", "cpu": None, "memory": None}
+        if not info:
+            return result
+        if len(info) != 1 or not info[0]["metric"].get("hostname"):
+            raise ValueError("Ambiguous node exporter identity")
+        selector = 'job="node_exporter",instance=' + json.dumps(
+            info[0]["metric"]["hostname"]
+        )
+        idle = "node_cpu_seconds_total{" + selector + ',mode="idle"}'
+        rates = self.query(
+            f"rate({idle}[1m]) and (time() - timestamp({idle}) <= 120)", now
+        )
+        if rates:
+            cpus = [row["metric"]["cpu"] for row in rates]
+            values = [float(row["value"][1]) for row in rates]
+            if len(set(cpus)) != len(cpus):
+                raise ValueError("Ambiguous CPU samples")
+            if all(math.isfinite(value) for value in values):
+                used = sum(1 - min(1, max(0, value)) for value in values)
+                result["cpu"] = {
+                    "total_cores": len(values),
+                    "used_cores": used,
+                    "utilization_percent": used / len(values) * 100,
+                }
+        memory = []
+        for metric in ("node_memory_MemTotal_bytes", "node_memory_MemAvailable_bytes"):
+            rows = self.query(fresh(metric + "{" + selector + "}"), now)
+            if len(rows) > 1:
+                raise ValueError("Ambiguous memory samples")
+            memory.append(float(rows[0]["value"][1]) if rows else None)
+        total, available = memory
+        if (
+            total is not None
+            and available is not None
+            and math.isfinite(total)
+            and math.isfinite(available)
+            and total > 0
+            and 0 <= available <= total
+        ):
+            used = int(total - available)
+            result["memory"] = {
+                "total_bytes": int(total),
+                "used_bytes": used,
+                "utilization_percent": used / total * 100,
+            }
+        count = sum(result[key] is not None for key in ("cpu", "memory"))
+        result["status"] = ("no_data", "partial", "available")[count]
         return result
