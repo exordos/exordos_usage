@@ -293,6 +293,15 @@ def add_current_spec(spec):
                 "utilization_percent": percent,
             }
         ),
+        "disk": measurement(
+            {
+                "mountpoint": {"type": "string", "enum": ["/"]},
+                "total_bytes": {"type": "integer", "minimum": 1},
+                "used_bytes": {"type": "integer", "minimum": 0},
+                "available_bytes": {"type": "integer", "minimum": 0},
+                "utilization_percent": percent,
+            }
+        ),
     }
     spec["components"]["schemas"]["UsageCurrent"] = {
         "type": "object",
@@ -301,9 +310,9 @@ def add_current_spec(spec):
     }
     spec["paths"]["/v1/usage/current/"]["get"].update(
         {
-            "summary": "Read current realm CPU and memory utilization",
+            "summary": "Read current realm CPU, memory and root filesystem utilization",
             "operationId": "Get_usage_current",
-            "description": "Requires usage.interval.read and an active realm binding in the selected project. CPU is averaged over one minute; memory is MemTotal minus MemAvailable. Totals are reported by the guest OS, so memory can be lower than allocated RAM. Samples older than 120 seconds are excluded. Missing metrics are null, never zero-filled. No historical usage intervals are written.",
+            "description": "Requires usage.interval.read and an active realm binding in the selected project. CPU is averaged over one minute; memory is MemTotal minus MemAvailable. Disk describes mountpoint /, used bytes are size minus free, and available bytes exclude reserved space. Totals are reported by the guest OS, so memory can be lower than allocated RAM. Samples older than 120 seconds are excluded. Missing metrics are null, never zero-filled. No historical usage intervals are written.",
             "security": [{"bearerAuth": []}],
             "parameters": [
                 {"name": "realm_uuid", "in": "query", "required": True, "schema": uuid},

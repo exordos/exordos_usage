@@ -162,7 +162,13 @@ class Victoria:
             ),
             now,
         )
-        result = {"observed_at": now, "status": "no_data", "cpu": None, "memory": None}
+        result = {
+            "observed_at": now,
+            "status": "no_data",
+            "cpu": None,
+            "memory": None,
+            "disk": None,
+        }
         if not info:
             return result
         if len(info) != 1 or not info[0]["metric"].get("hostname"):
@@ -207,6 +213,46 @@ class Victoria:
                 "used_bytes": used,
                 "utilization_percent": used / total * 100,
             }
-        count = sum(result[key] is not None for key in ("cpu", "memory"))
-        result["status"] = ("no_data", "partial", "available")[count]
+        filesystem = (
+            '{__name__=~"node_filesystem_(size|free|avail)_bytes",'
+            + selector
+            + ',mountpoint="/",fstype!~"tmpfs|devtmpfs|overlay|squashfs|proc|sysfs"}'
+        )
+        rows = self.query(fresh(filesystem), now)
+        disk = {}
+        identities = set()
+        for row in rows:
+            labels = row["metric"]
+            metric = labels["__name__"]
+            if (
+                metric
+                not in {
+                    "node_filesystem_size_bytes",
+                    "node_filesystem_free_bytes",
+                    "node_filesystem_avail_bytes",
+                }
+                or metric in disk
+            ):
+                raise ValueError("Ambiguous filesystem samples")
+            identities.add((labels["device"], labels["fstype"]))
+            disk[metric] = float(row["value"][1])
+        if len(identities) > 1:
+            raise ValueError("Mismatched filesystem samples")
+        if len(disk) == 3 and all(math.isfinite(value) for value in disk.values()):
+            total = disk["node_filesystem_size_bytes"]
+            free = disk["node_filesystem_free_bytes"]
+            available = disk["node_filesystem_avail_bytes"]
+            if total > 0 and 0 <= available <= free <= total:
+                used = int(total - free)
+                result["disk"] = {
+                    "mountpoint": "/",
+                    "total_bytes": int(total),
+                    "used_bytes": used,
+                    "available_bytes": int(available),
+                    "utilization_percent": used / total * 100,
+                }
+        count = sum(result[key] is not None for key in ("cpu", "memory", "disk"))
+        result["status"] = (
+            "available" if count == 3 else "partial" if count else "no_data"
+        )
         return result

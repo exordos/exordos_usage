@@ -29,6 +29,19 @@ def row(value, **labels):
     return {"metric": labels, "value": [NOW.timestamp(), str(value)]}
 
 
+def filesystem(total=100, free=60, available=55):
+    return [
+        row(
+            value,
+            __name__="node_filesystem_" + name + "_bytes",
+            device="/dev/vda1",
+            fstype="ext4",
+            mountpoint="/",
+        )
+        for name, value in (("size", total), ("free", free), ("avail", available))
+    ]
+
+
 def test_current_utilization_and_exact_node_selector():
     client = Victoria("http://vm", "reader", "secret")
     resource = uuid4()
@@ -40,6 +53,7 @@ def test_current_utilization_and_exact_node_selector():
             [row(0.58, cpu=str(i)) for i in range(4)],
             [row(8 * 1024**3)],
             [row(2.4 * 1024**3)],
+            filesystem(),
         ],
     ) as query:
         result = client.current(resource, NOW)
@@ -48,6 +62,13 @@ def test_current_utilization_and_exact_node_selector():
     assert result["cpu"]["used_cores"] == pytest.approx(1.68)
     assert result["cpu"]["utilization_percent"] == pytest.approx(42)
     assert result["memory"]["utilization_percent"] == pytest.approx(70)
+    assert result["disk"] == {
+        "mountpoint": "/",
+        "total_bytes": 100,
+        "used_bytes": 40,
+        "available_bytes": 55,
+        "utilization_percent": 40,
+    }
     expressions = [call.args[0] for call in query.call_args_list]
     assert str(resource) in expressions[0]
     assert 'instance="realm\\"one"' in expressions[1]
@@ -63,7 +84,7 @@ def test_missing_or_stale_node_identity_does_not_query_other_nodes():
     with patch.object(client, "query", return_value=[]) as query:
         result = client.current(uuid4(), NOW)
     assert result["status"] == "no_data"
-    assert result["cpu"] is result["memory"] is None
+    assert result["cpu"] is result["memory"] is result["disk"] is None
     query.assert_called_once()
 
 
@@ -73,7 +94,7 @@ def test_missing_or_stale_node_identity_does_not_query_other_nodes():
         ([], 8, 2, "partial"),
         ([row("NaN", cpu="0")], None, None, "no_data"),
         ([row(1, cpu="0")], 8, 10, "partial"),
-        ([row(1, cpu="0")], 8, 8, "available"),
+        ([row(1, cpu="0")], 8, 8, "partial"),
     ],
 )
 def test_missing_invalid_and_zero_measurements(cpu, total, available, status):
@@ -86,6 +107,7 @@ def test_missing_invalid_and_zero_measurements(cpu, total, available, status):
             cpu,
             [row(total)] if total is not None else [],
             [row(available)] if available is not None else [],
+            [],
         ],
     ):
         result = client.current(uuid4(), NOW)
@@ -111,3 +133,60 @@ def test_query_errors_are_not_missing_measurements():
     with patch("exordos_usage.common.clients.requests.get", return_value=response):
         with pytest.raises(ValueError, match="Invalid VictoriaMetrics"):
             client.query("up", NOW)
+
+
+@pytest.mark.parametrize(
+    "samples,expected",
+    [
+        (
+            filesystem(),
+            {
+                "mountpoint": "/",
+                "total_bytes": 100,
+                "used_bytes": 40,
+                "available_bytes": 55,
+                "utilization_percent": 40,
+            },
+        ),
+        (
+            filesystem(100, 100, 100),
+            {
+                "mountpoint": "/",
+                "total_bytes": 100,
+                "used_bytes": 0,
+                "available_bytes": 100,
+                "utilization_percent": 0,
+            },
+        ),
+        ([], None),
+        (filesystem()[:2], None),
+        (filesystem(0, 0, 0), None),
+        (filesystem(float("nan")), None),
+        (filesystem(100, 50, 60), None),
+    ],
+)
+def test_root_filesystem_measurements(samples, expected):
+    client = Victoria("http://vm", "reader", "secret")
+    with patch.object(
+        client, "query", side_effect=[[row(1, hostname="realm")], [], [], [], samples]
+    ) as query:
+        result = client.current(uuid4(), NOW)
+    assert result["disk"] == expected
+    assert result["status"] == ("partial" if expected else "no_data")
+    assert 'mountpoint="/"' in query.call_args.args[0]
+    assert "fstype!~" in query.call_args.args[0]
+
+
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_ambiguous_root_filesystem_is_rejected(mismatch):
+    samples = filesystem()
+    if mismatch:
+        samples[-1]["metric"]["device"] = "/dev/vdb1"
+    else:
+        samples.append(samples[0])
+    client = Victoria("http://vm", "reader", "secret")
+    with patch.object(
+        client, "query", side_effect=[[row(1, hostname="realm")], [], [], [], samples]
+    ):
+        with pytest.raises(ValueError, match="filesystem samples"):
+            client.current(uuid4(), NOW)

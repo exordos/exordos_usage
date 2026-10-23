@@ -53,6 +53,13 @@ def test_current_scopes_binding_and_returns_live_data(dsn):
         "status": "available",
         "cpu": {"total_cores": 4, "used_cores": 1.68, "utilization_percent": 42},
         "memory": {"total_bytes": 100, "used_bytes": 70, "utilization_percent": 70},
+        "disk": {
+            "mountpoint": "/",
+            "total_bytes": 100,
+            "used_bytes": 40,
+            "available_bytes": 55,
+            "utilization_percent": 40,
+        },
     }
     with (
         patch("exordos_usage.user_api.api.controllers.cfg", Mock()),
@@ -64,6 +71,7 @@ def test_current_scopes_binding_and_returns_live_data(dsn):
         assert response.json["project_id"] == str(project)
         assert response.json["realm_uuid"] == str(realm)
         assert response.json["cpu"]["utilization_percent"] == 42
+        assert response.json["disk"]["available_bytes"] == 55
         assert (
             str(victoria.return_value.current.call_args.args[0])
             == response.json["resource_uuid"]
