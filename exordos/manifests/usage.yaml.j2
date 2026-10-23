@@ -75,6 +75,10 @@ resources:
       project_id: null
 
   $core.iam.rolebinding:
+    ecosystem_usage_viewer:
+      role: $core.iam.roles.$usage_viewer:uuid
+      user: $usage.imports.$ecosystem_service_user:uuid
+      project: null
     usage_collector_global:
       role: $core.iam.roles.$usage_collector:uuid
       user: $core.iam.users.$usage_collector:uuid
@@ -106,6 +110,16 @@ resources:
           - size: 6
             image: "{{ images.usage }}"
             label: root
+
+  $usage.imports.$core_local_domain.records:
+    usage:
+      domain: $usage.imports.$core_local_domain:uuid
+      project_id: "12345678-c625-4fee-81d5-f691897b8142"
+      type: A
+      record:
+        kind: A
+        name: usage
+        address: $core.compute.nodes.$usage_cp:default_network:ipv4
 
   $core.config.configs:
     usage_config:
@@ -153,6 +167,14 @@ resources:
           workers = 2"
 
 imports:
+  core_local_domain:
+    element: $core
+    kind: resource
+    link: $core.dns.domains.$local_domain
+  ecosystem_service_user:
+    element: $exordos_ecosystem
+    kind: resource
+    link: $core.iam.users.$ecosystem_admin_user
   pg:
     element: $communal_pg_cluster
     kind: resource

@@ -76,3 +76,29 @@ def test_build_references_existing_image_script():
         assert (ROOT / "exordos" / element["manifest"]).is_file()
         for image in element["images"]:
             assert (ROOT / "exordos" / image["script"]).is_file()
+
+
+def test_ecosystem_service_has_read_only_usage_role():
+    doc = manifest()
+    assert doc["imports"]["ecosystem_service_user"] == {
+        "element": "$exordos_ecosystem",
+        "kind": "resource",
+        "link": "$core.iam.users.$ecosystem_admin_user",
+    }
+    assert doc["resources"]["$core.iam.rolebinding"]["ecosystem_usage_viewer"] == {
+        "role": "$core.iam.roles.$usage_viewer:uuid",
+        "user": "$usage.imports.$ecosystem_service_user:uuid",
+        "project": None,
+    }
+    permissions = [
+        binding
+        for binding in doc["resources"]["$core.iam.permissionbinding"].values()
+        if binding["role"] == "$core.iam.roles.$usage_viewer:uuid"
+    ]
+    assert permissions == [
+        {
+            "role": "$core.iam.roles.$usage_viewer:uuid",
+            "permission": "$core.iam.permissions.$usage_interval_read:uuid",
+            "project_id": None,
+        }
+    ]

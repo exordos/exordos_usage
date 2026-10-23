@@ -7,6 +7,9 @@ ownership history in PostgreSQL and exposes project-scoped statistics.
 Realm ownership comes from the existing ecosystem `/v1/realms/` API. The
 collector's dedicated role has only `exordos_ecosystem.realm.read`.
 Financial accounts, tariffs and balance operations remain in ecosystem.
+The ecosystem service user has the read-only `usage_viewer` role. Its unscoped
+requests must specify `project_id`. The internal API address is
+`http://usage.local.genesis-core.tech:8080`.
 
 ## Project structure
 
