@@ -318,7 +318,7 @@ def add_current_spec(spec):
         {
             "summary": "Read current realm CPU, memory and root filesystem utilization",
             "operationId": "Get_usage_current",
-            "description": "Requires usage.interval.read and an active realm binding in the selected project. CPU is averaged over one minute; memory is MemTotal minus MemAvailable. Disk describes mountpoint /, used bytes are size minus free, and available bytes exclude reserved space. Totals are reported by the guest OS, so memory can be lower than allocated RAM. Samples older than 120 seconds are excluded. Missing metrics are null, never zero-filled. No historical usage intervals are written.",
+            "description": "Requires usage.interval.read and an active realm binding in the selected project. Live ownership and node identity are rechecked against ecosystem on every request; ownership verification failures return 503 without querying VictoriaMetrics. CPU is averaged over one minute; memory is MemTotal minus MemAvailable. Disk describes mountpoint /, used bytes are size minus free, and available bytes exclude reserved space. Totals are reported by the guest OS, so memory can be lower than allocated RAM. Samples older than 120 seconds are excluded. Missing metrics are null, never zero-filled. No historical usage intervals are written.",
             "security": [{"bearerAuth": []}],
             "parameters": [
                 {"name": "realm_uuid", "in": "query", "required": True, "schema": uuid},
@@ -344,10 +344,10 @@ def add_current_spec(spec):
                     "description": "Permission denied or project outside token scope."
                 },
                 "404": {
-                    "description": "No active realm binding in the selected project."
+                    "description": "No active realm binding or authoritative ownership/node no longer matches the selected project."
                 },
                 "503": {
-                    "description": "VictoriaMetrics unavailable or exporter identity ambiguous."
+                    "description": "Ecosystem ownership verification unavailable, VictoriaMetrics unavailable or exporter identity ambiguous."
                 },
             },
         }

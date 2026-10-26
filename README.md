@@ -104,8 +104,8 @@ Reports require a bearer token with `usage.interval.read` and a UTC range
 `[start, end)` of at most 31 days, with boundaries on five-minute marks.
 The project comes from the caller's IAM token; an unscoped token must supply
 `project_id`. Optional filters are `realm_uuid`, `resource_uuid` and `metric`.
-Supported metrics are `cpu_allocated`, `ram_allocated` and `disk_allocated`.
-Omitting `metric` returns all three.
+Supported metrics are `cpu_allocated`, `ram_allocated`, `disk_allocated`,
+`cpu_used` and `ram_used`. Omitting `metric` returns all five.
 
 Time series are limited to 2000 buckets. Breakdown pagination uses
 `page_limit` (1 to 200 groups, default 100) and `page_marker`. When another
@@ -145,6 +145,9 @@ Authorization: Bearer <project-token>
 The endpoint uses the same `usage.interval.read` permission and project scope
 as reports. An unscoped token must also specify `project_id`. Only an active
 realm binding in that project can be queried; otherwise the response is 404.
+Before reading live metrics, usage checks the realm owner and node against
+ecosystem. A changed owner or node returns 404; failed ownership verification
+returns 503 without querying VictoriaMetrics.
 
 CPU utilization is averaged over the last minute. Disk usage describes the root
 filesystem `/`: used bytes are size minus free bytes, while available bytes

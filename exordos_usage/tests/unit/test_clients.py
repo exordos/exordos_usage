@@ -193,3 +193,41 @@ def test_null_export_samples_preserve_missing_coverage_without_blocking_collecti
     measured = integrate(samples[(node, "exordos_compute_node_cores")], 0, 45000, 45000)
     assert measured.quantity == 60
     assert measured.covered_ms == 15000 and not measured.complete
+
+
+def test_live_realm_read_uses_authoritative_single_realm_endpoint():
+    from uuid import UUID
+
+    item = realm()
+    response = Mock(status_code=200)
+    response.json.return_value = item
+    with patch(
+        "exordos_usage.common.clients.requests.get", return_value=response
+    ) as get:
+        result = Ecosystem("http://eco", Mock()).realm(item["uuid"])
+    assert get.call_args.args[0] == "http://eco/v1/realms/" + item["uuid"]
+    assert result == {
+        "project_id": UUID(item["project_id"]),
+        "resource_uuid": UUID(item["node_uuid"]),
+    }
+
+
+def test_live_realm_404_is_absent_and_other_errors_propagate():
+    for status in (404, 503):
+        response = Mock(status_code=status)
+        response.raise_for_status.side_effect = requests.HTTPError(response=response)
+        with patch("exordos_usage.common.clients.requests.get", return_value=response):
+            client = Ecosystem("http://eco", Mock())
+            if status == 404:
+                assert client.realm(uuid4()) is None
+            else:
+                with pytest.raises(requests.HTTPError):
+                    client.realm(uuid4())
+
+
+def test_live_realm_response_identity_must_match_request():
+    response = Mock(status_code=200)
+    response.json.return_value = realm()
+    with patch("exordos_usage.common.clients.requests.get", return_value=response):
+        with pytest.raises(ValueError, match="Unexpected realm"):
+            Ecosystem("http://eco", Mock()).realm(uuid4())

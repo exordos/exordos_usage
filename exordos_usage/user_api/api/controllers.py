@@ -25,7 +25,7 @@ from restalchemy.api import controllers
 from restalchemy.common import contexts, exceptions
 from restalchemy.dm import filters as sql_filters
 
-from exordos_usage.common.clients import Victoria
+from exordos_usage.common.clients import Ecosystem, Victoria
 from exordos_usage.user_api.dm import reports
 from exordos_usage.user_api.dm.models import UsageBinding
 from exordos_usage.user_api.dm.usage import milliseconds, utc
@@ -193,6 +193,19 @@ class CurrentUsageController(controllers.Controller):
         if len(bindings) != 1:
             raise CurrentUsageUnavailable()
         binding = bindings[0]
+        try:
+            ownership = Ecosystem.from_config().realm(realm)
+        except Exception as exc:
+            logging.getLogger(__name__).exception(
+                "Failed to verify current realm ownership"
+            )
+            raise CurrentUsageUnavailable() from exc
+        if (
+            ownership is None
+            or ownership["project_id"] != project
+            or ownership["resource_uuid"] != binding.resource_uuid
+        ):
+            raise exceptions.NotFoundError(path=self.request.path)
         settings = cfg.CONF.victoria
         try:
             result = Victoria(

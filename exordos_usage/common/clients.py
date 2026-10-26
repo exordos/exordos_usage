@@ -24,6 +24,8 @@ from decimal import Decimal
 from uuid import UUID
 
 import requests
+from gcl_sdk.clients.http.base import CoreIamAuthenticator
+from oslo_config import cfg
 
 from exordos_usage.common.actual import actual_samples
 from exordos_usage.user_api.dm.usage import ALLOCATION_METRICS, sample_value
@@ -34,23 +36,61 @@ class Ecosystem:
         self.endpoint = endpoint.rstrip("/")
         self.auth = auth
 
+    @classmethod
+    def from_config(cls):
+        settings = cfg.CONF.ecosystem
+        return cls(
+            settings.endpoint,
+            CoreIamAuthenticator(
+                base_url=settings.core_endpoint.rstrip("/"),
+                username=settings.username,
+                password=settings.password,
+            ),
+        )
+
     def _page(self, params):
+        return self._get("/v1/realms/", params)
+
+    def _get(self, path, params=None):
         response = requests.get(
-            self.endpoint + "/v1/realms/",
-            params=dict(params),
+            self.endpoint + path,
+            params=dict(params or {}),
             headers=self.auth.get_auth_header(),
             timeout=30,
         )
         if response.status_code == 401:
             self.auth.authenticate()
             response = requests.get(
-                self.endpoint + "/v1/realms/",
-                params=dict(params),
+                self.endpoint + path,
+                params=dict(params or {}),
                 headers=self.auth.get_auth_header(),
                 timeout=30,
             )
         response.raise_for_status()
         return response
+
+    def realm(self, realm_uuid):
+        """Read authoritative ownership for a live metrics request; never cache."""
+        realm_uuid = UUID(str(realm_uuid))
+        try:
+            response = self._get(f"/v1/realms/{realm_uuid}")
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                return None
+            raise
+        item = response.json()
+        if not isinstance(item, dict) or UUID(item["uuid"]) != realm_uuid:
+            raise ValueError("Unexpected realm response")
+        if (
+            item["kind"] != "MANAGED"
+            or item["node_uuid"] is None
+            or item["project_id"] is None
+        ):
+            return None
+        return {
+            "resource_uuid": UUID(item["node_uuid"]),
+            "project_id": UUID(item["project_id"]),
+        }
 
     def bindings(self) -> tuple:
         bindings, seen, markers = [], set(), set()
