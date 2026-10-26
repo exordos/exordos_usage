@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  Lint:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: usage_test
+          POSTGRES_USER: usage
+          POSTGRES_PASSWORD: usage
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install requirements
+        run: sudo apt update && sudo apt install --yes libev-dev
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install tox-uv
+        run: uv tool install tox --with tox-uv
+      - name: Ruff
+        run: tox -e ruff-check
+      - name: Unit tests
+        run: tox -e py314
+      - name: PostgreSQL and API tests
+        env:
+          USAGE_TEST_DSN: postgresql://usage:usage@127.0.0.1:5432/usage_test
+        run: tox -e functional

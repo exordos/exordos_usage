@@ -1,0 +1,28 @@
+name: build
+
+on:
+  push:
+    branches-ignore:
+      - master
+    tags:
+      - '*'
+
+permissions:
+  contents: read
+
+jobs:
+  Build:
+    runs-on: [self-hosted, vm]
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Build Element
+        env:
+          PUSH_CFG: ${{ secrets.PUSH_CFG }}
+        run: |
+          set -euo pipefail
+          exordos build "$(pwd)"
+          printf '%s' "$PUSH_CFG" | base64 -d > exordos/exordos.push.yaml
+          exordos push -c exordos/exordos.push.yaml -t local -f --latest
