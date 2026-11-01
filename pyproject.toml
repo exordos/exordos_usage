@@ -47,7 +47,7 @@ exordos-usage-recovery = "exordos_usage.cmd.recovery:main"
 
 [build-system]
 requires = [
-    "setuptools>=83.0.0,<84.0.0", # MIT
+    "setuptools>=83.0.0,<85.0.0", # MIT
     "setuptools_scm>=10.0.5,<11.0.0", # MIT
 ]
 build-backend = "setuptools.build_meta"
