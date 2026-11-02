@@ -98,3 +98,19 @@ def test_node_current_contract():
     properties = spec["components"]["schemas"]["NodeUsageCurrent"]["properties"]
     assert "node_uuid" in properties
     assert "hypervisor_uuid" not in properties
+
+
+def test_compute_usage_uses_core_access_not_history_permission():
+    spec = openapi.build()
+    for collection in ("nodes", "hypervisors"):
+        operation = spec["paths"][f"/v1/usage/{collection}/current/"]["get"]
+        assert "usage.interval.read" not in operation["description"]
+        assert f"/v1/compute/{collection}/" in operation["description"]
+    assert (
+        "usage.interval.read"
+        in spec["paths"]["/v1/usage/summary/"]["get"]["description"]
+    )
+    assert (
+        "usage.interval.read"
+        in spec["paths"]["/v1/usage/current/"]["get"]["description"]
+    )

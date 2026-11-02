@@ -40,7 +40,7 @@ def get_openapi_engine():
         info=structures.OpenApiInfo(
             title="Exordos Usage v1 User API",
             version=version.version_info,
-            description="Resource usage history. Requires usage.interval.read permission.",
+            description="Resource usage history and current compute utilization.",
         ),
         paths=structures.OpenApiPaths(),
     )

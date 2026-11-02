@@ -201,22 +201,21 @@ class NodeCurrentUsageController(controllers.Controller):
         params = self.request.GET
         if set(params) != {self.query_key} or len(params.getall(self.query_key)) != 1:
             raise self.query_error()
-        context = contexts.get_context()
-        context.iam_context.enforcer.enforce(
-            rules.Rule("usage", "interval", "read"), do_raise=True
-        )
         try:
             resource = UUID(params[self.query_key])
         except ValueError as exc:
             raise self.query_error() from exc
+        authorization = self.request.headers.get("Authorization")
+        if not authorization:
+            raise iam_exceptions.Forbidden()
         try:
-            status, body = self.lookup(resource, self.request.headers["Authorization"])
+            status, body = self.lookup(resource, authorization)
         except Exception as exc:
             logging.getLogger(__name__).exception(
                 "Failed to verify compute resource access"
             )
             raise CurrentUsageUnavailable() from exc
-        if status == 403:
+        if status in (401, 403):
             raise iam_exceptions.Forbidden()
         if status == 404:
             raise exceptions.NotFoundError(path=self.request.path)

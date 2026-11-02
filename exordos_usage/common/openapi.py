@@ -279,7 +279,7 @@ def add_hypervisor_current_spec(spec):
         {
             "summary": "Read current Exordos hypervisor host utilization",
             "operationId": "Get_usage_hypervisors_current",
-            "description": "Requires usage.interval.read and access to GET /v1/compute/hypervisors/{uuid} in Core using the caller's token. Supports exordos_local_hyper driver_spec.node. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes the root filesystem only, not storage pools. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+            "description": "Requires access to GET /v1/compute/hypervisors/{uuid} in Core using the caller's token. Supports exordos_local_hyper driver_spec.node. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes the root filesystem only, not storage pools. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
             "security": [{"bearerAuth": []}],
             "parameters": [
                 {
@@ -302,9 +302,7 @@ def add_hypervisor_current_spec(spec):
                 },
                 "400": {"description": "Invalid hypervisor query."},
                 "401": {"description": "Missing, invalid or expired token."},
-                "403": {
-                    "description": "Usage permission or Core hypervisor access denied."
-                },
+                "403": {"description": "Core hypervisor access denied."},
                 "404": {"description": "Hypervisor not found in Core."},
                 "422": {
                     "description": "Hypervisor has no supported host node mapping."
@@ -330,7 +328,7 @@ def add_node_current_spec(spec):
     operation.update(
         summary="Read current compute node utilization",
         operationId="Get_usage_nodes_current",
-        description="Requires usage.interval.read and access to GET /v1/compute/nodes/{uuid} in Core using the caller's token. Supports any compute node with node exporter metrics and a fresh exordos_compute_node_info identity. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes only the root filesystem. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+        description="Requires access to GET /v1/compute/nodes/{uuid} in Core using the caller's token. Supports any compute node with node exporter metrics and a fresh exordos_compute_node_info identity. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes only the root filesystem. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
     )
     operation["parameters"][0]["name"] = "node_uuid"
     operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"] = (
@@ -338,9 +336,7 @@ def add_node_current_spec(spec):
     )
     operation["responses"]["200"]["description"] = "Current node snapshot."
     operation["responses"]["400"]["description"] = "Invalid node query."
-    operation["responses"]["403"]["description"] = (
-        "Usage permission or Core node access denied."
-    )
+    operation["responses"]["403"]["description"] = "Core node access denied."
     operation["responses"]["404"]["description"] = "Node not found in Core."
     del operation["responses"]["422"]
     spec["paths"]["/v1/usage/nodes/current/"]["get"].update(operation)

@@ -51,7 +51,7 @@ class Core:
             timeout=(5, 10),
             allow_redirects=False,
         )
-        if response.status_code in (403, 404):
+        if response.status_code in (401, 403, 404):
             return response.status_code, None
         if response.status_code != 200:
             raise ValueError("Core resource lookup failed")

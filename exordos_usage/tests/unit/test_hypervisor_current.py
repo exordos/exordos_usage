@@ -66,7 +66,7 @@ def test_host_snapshot_uses_authorized_core_node():
 @pytest.mark.parametrize(
     "scenario,expected",
     [
-        ("no_permission", 403),
+        ("invalid_token", 403),
         ("denied", 403),
         ("missing", 404),
         ("unsupported", 422),
@@ -76,7 +76,7 @@ def test_host_snapshot_uses_authorized_core_node():
     ],
 )
 def test_host_access_and_upstream_failures(scenario, expected):
-    app, token = authenticated_app(uuid4(), scenario)
+    app, token = authenticated_app(uuid4(), "no_permission")
     with (
         patch("exordos_usage.user_api.api.controllers.Core.hypervisor") as lookup,
         patch("exordos_usage.user_api.api.controllers.Victoria") as metrics,
@@ -86,6 +86,8 @@ def test_host_access_and_upstream_failures(scenario, expected):
             200,
             {"driver_spec": {"kind": "exordos_local_hyper", "node": str(uuid4())}},
         )
+        if scenario == "invalid_token":
+            lookup.return_value = 401, None
         if scenario in {"denied", "missing"}:
             lookup.return_value = expected, None
         if scenario == "unsupported":
@@ -107,8 +109,6 @@ def test_host_access_and_upstream_failures(scenario, expected):
         assert "private details" not in response.text
         if scenario != "metrics_outage":
             metrics.assert_not_called()
-        if scenario == "no_permission":
-            lookup.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -151,7 +151,7 @@ def test_core_lookup_uses_caller_token_without_redirects(status):
         patch("exordos_usage.common.clients.cfg") as config,
     ):
         config.CONF.ecosystem.core_endpoint = "http://core/"
-        if status in (200, 403, 404):
+        if status in (200, 401, 403, 404):
             code, body = Core.hypervisor(host, "Bearer caller")
             assert code == status
             assert body == (response.json.return_value if status == 200 else None)
@@ -181,7 +181,7 @@ def test_core_lookup_rejects_wrong_identity():
 @pytest.mark.parametrize("status", [200, 403, 404, 503])
 def test_node_current_uses_node_access_and_shared_measurements(status):
     node = uuid4()
-    app, token = authenticated_app(uuid4())
+    app, token = authenticated_app(uuid4(), "no_permission")
     with (
         patch("exordos_usage.user_api.api.controllers.Core.node") as lookup,
         patch("exordos_usage.user_api.api.controllers.Victoria") as metrics,
@@ -237,7 +237,7 @@ def test_current_lookup_obeys_restalchemy_resource_routing(collection, key):
     from restalchemy.api.middlewares.errors import ErrorsHandlerMiddleware
 
     resource, node = uuid4(), uuid4()
-    app, token = authenticated_app(uuid4())
+    app, token = authenticated_app(uuid4(), "no_permission")
 
     class ComputeResourceController(controllers.Controller):
         def get(self, uuid):
