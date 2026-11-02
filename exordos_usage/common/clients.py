@@ -31,6 +31,36 @@ from exordos_usage.common.actual import actual_samples
 from exordos_usage.user_api.dm.usage import ALLOCATION_METRICS, sample_value
 
 
+class Core:
+    """Resolve compute resources using the caller's Core authorization."""
+
+    @classmethod
+    def hypervisor(cls, hypervisor_uuid, authorization):
+        return cls._resource("hypervisors", hypervisor_uuid, authorization)
+
+    @classmethod
+    def node(cls, node_uuid, authorization):
+        return cls._resource("nodes", node_uuid, authorization)
+
+    @staticmethod
+    def _resource(collection, resource_uuid, authorization):
+        response = requests.get(
+            cfg.CONF.ecosystem.core_endpoint.rstrip("/")
+            + f"/v1/compute/{collection}/{resource_uuid}/",
+            headers={"Authorization": authorization},
+            timeout=(5, 10),
+            allow_redirects=False,
+        )
+        if response.status_code in (403, 404):
+            return response.status_code, None
+        if response.status_code != 200:
+            raise ValueError("Core resource lookup failed")
+        body = response.json()
+        if UUID(body["uuid"]) != resource_uuid:
+            raise ValueError("Core returned a different resource")
+        return 200, body
+
+
 class Ecosystem:
     def __init__(self, endpoint: str, auth):
         self.endpoint = endpoint.rstrip("/")

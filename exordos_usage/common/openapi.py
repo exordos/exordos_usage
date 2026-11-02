@@ -53,6 +53,8 @@ class UsageOpenApiEngine(engines.OpenApiEngine):
         }
         add_report_specs(spec)
         add_current_spec(spec)
+        add_hypervisor_current_spec(spec)
+        add_node_current_spec(spec)
         return spec
 
 
@@ -261,6 +263,87 @@ def add_report_specs(spec):
                     "description": "Present only when another page of groups is available.",
                 }
             }
+
+
+def add_hypervisor_current_spec(spec):
+    from copy import deepcopy
+
+    schema = deepcopy(spec["components"]["schemas"]["UsageCurrent"])
+    for name in ("project_id", "realm_uuid"):
+        del schema["properties"][name]
+        schema["required"].remove(name)
+    schema["properties"]["hypervisor_uuid"] = {"type": "string", "format": "uuid"}
+    schema["required"].append("hypervisor_uuid")
+    spec["components"]["schemas"]["HypervisorUsageCurrent"] = schema
+    spec["paths"]["/v1/usage/hypervisors/current/"]["get"].update(
+        {
+            "summary": "Read current Exordos hypervisor host utilization",
+            "operationId": "Get_usage_hypervisors_current",
+            "description": "Requires usage.interval.read and access to GET /v1/compute/hypervisors/{uuid}/ in Core using the caller's token. Supports exordos_local_hyper driver_spec.node. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes the root filesystem only, not storage pools. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+            "security": [{"bearerAuth": []}],
+            "parameters": [
+                {
+                    "name": "hypervisor_uuid",
+                    "in": "query",
+                    "required": True,
+                    "schema": {"type": "string", "format": "uuid"},
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Current host snapshot.",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HypervisorUsageCurrent"
+                            }
+                        }
+                    },
+                },
+                "400": {"description": "Invalid hypervisor query."},
+                "401": {"description": "Missing, invalid or expired token."},
+                "403": {
+                    "description": "Usage permission or Core hypervisor access denied."
+                },
+                "404": {"description": "Hypervisor not found in Core."},
+                "422": {
+                    "description": "Hypervisor has no supported host node mapping."
+                },
+                "503": {
+                    "description": "Core or metrics unavailable, or ambiguous exporter identity."
+                },
+            },
+        }
+    )
+
+
+def add_node_current_spec(spec):
+    from copy import deepcopy
+
+    schema = deepcopy(spec["components"]["schemas"]["HypervisorUsageCurrent"])
+    del schema["properties"]["hypervisor_uuid"]
+    schema["required"].remove("hypervisor_uuid")
+    schema["properties"]["node_uuid"] = {"type": "string", "format": "uuid"}
+    schema["required"].append("node_uuid")
+    spec["components"]["schemas"]["NodeUsageCurrent"] = schema
+    operation = deepcopy(spec["paths"]["/v1/usage/hypervisors/current/"]["get"])
+    operation.update(
+        summary="Read current compute node utilization",
+        operationId="Get_usage_nodes_current",
+        description="Requires usage.interval.read and access to GET /v1/compute/nodes/{uuid}/ in Core using the caller's token. Supports any compute node with node exporter metrics and a fresh exordos_compute_node_info identity. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes only the root filesystem. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+    )
+    operation["parameters"][0]["name"] = "node_uuid"
+    operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"] = (
+        "#/components/schemas/NodeUsageCurrent"
+    )
+    operation["responses"]["200"]["description"] = "Current node snapshot."
+    operation["responses"]["400"]["description"] = "Invalid node query."
+    operation["responses"]["403"]["description"] = (
+        "Usage permission or Core node access denied."
+    )
+    operation["responses"]["404"]["description"] = "Node not found in Core."
+    del operation["responses"]["422"]
+    spec["paths"]["/v1/usage/nodes/current/"]["get"].update(operation)
 
 
 def add_current_spec(spec):

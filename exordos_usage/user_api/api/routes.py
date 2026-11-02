@@ -44,11 +44,37 @@ class CurrentUsageRoute(routes.Route):
     __allow_methods__ = (routes.FILTER,)
 
 
+class HypervisorCurrentUsageRoute(routes.Route):
+    __controller__ = controllers.HypervisorCurrentUsageController
+    __allow_methods__ = (routes.FILTER,)
+
+
+class HypervisorsUsageRoute(routes.Route):
+    __controller__ = controllers.HypervisorsUsageRoutesController
+    __allow_methods__ = (routes.FILTER,)
+
+    current = routes.route(HypervisorCurrentUsageRoute)
+
+
+class NodeCurrentUsageRoute(routes.Route):
+    __controller__ = controllers.NodeCurrentUsageController
+    __allow_methods__ = (routes.FILTER,)
+
+
+class NodesUsageRoute(routes.Route):
+    __controller__ = controllers.NodesUsageRoutesController
+    __allow_methods__ = (routes.FILTER,)
+
+    current = routes.route(NodeCurrentUsageRoute)
+
+
 class UsageRoute(routes.Route):
     __controller__ = controllers.UsageRoutesController
     __allow_methods__ = (routes.FILTER,)
 
     current = routes.route(CurrentUsageRoute)
+    hypervisors = routes.route(HypervisorsUsageRoute)
+    nodes = routes.route(NodesUsageRoute)
     summary = routes.route(SummaryRoute)
     timeseries = routes.route(TimeseriesRoute)
     breakdown = routes.route(BreakdownRoute)

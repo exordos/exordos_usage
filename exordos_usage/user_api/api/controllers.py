@@ -25,7 +25,7 @@ from restalchemy.api import controllers
 from restalchemy.common import contexts, exceptions
 from restalchemy.dm import filters as sql_filters
 
-from exordos_usage.common.clients import Ecosystem, Victoria
+from exordos_usage.common.clients import Core, Ecosystem, Victoria
 from exordos_usage.user_api.dm import reports
 from exordos_usage.user_api.dm.models import UsageBinding
 from exordos_usage.user_api.dm.usage import milliseconds, utc
@@ -57,6 +57,14 @@ class ApiEndpointController(controllers.RoutesListController):
 
 class UsageRoutesController(controllers.RoutesListController):
     __TARGET_PATH__ = "/v1/usage/"
+
+
+class HypervisorsUsageRoutesController(controllers.RoutesListController):
+    __TARGET_PATH__ = "/v1/usage/hypervisors/"
+
+
+class NodesUsageRoutesController(controllers.RoutesListController):
+    __TARGET_PATH__ = "/v1/usage/nodes/"
 
 
 class ReportController(controllers.Controller):
@@ -163,6 +171,81 @@ class CurrentUsageUnavailable(exceptions.RestAlchemyException):
 
 class InvalidCurrentUsageQuery(exceptions.ValidationErrorException):
     message = "Select a project and a valid realm_uuid."
+
+
+class InvalidHypervisorUsageQuery(exceptions.ValidationErrorException):
+    message = "Select a valid hypervisor_uuid."
+
+
+class UnsupportedHypervisorUsage(exceptions.RestAlchemyException):
+    code = 422
+    message = "Current usage requires an exordos_local_hyper host node."
+
+
+class InvalidNodeUsageQuery(exceptions.ValidationErrorException):
+    message = "Select a valid node_uuid."
+
+
+class NodeCurrentUsageController(controllers.Controller):
+    query_key = "node_uuid"
+    query_error = InvalidNodeUsageQuery
+
+    def lookup(self, resource, authorization):
+        return Core.node(resource, authorization)
+
+    def host_node(self, resource, body):
+        return resource
+
+    def filter(self, filters, order_by=None):
+        """Read live node utilization after Core verifies resource access."""
+        params = self.request.GET
+        if set(params) != {self.query_key} or len(params.getall(self.query_key)) != 1:
+            raise self.query_error()
+        context = contexts.get_context()
+        context.iam_context.enforcer.enforce(
+            rules.Rule("usage", "interval", "read"), do_raise=True
+        )
+        try:
+            resource = UUID(params[self.query_key])
+        except ValueError as exc:
+            raise self.query_error() from exc
+        try:
+            status, body = self.lookup(resource, self.request.headers["Authorization"])
+        except Exception as exc:
+            logging.getLogger(__name__).exception(
+                "Failed to verify compute resource access"
+            )
+            raise CurrentUsageUnavailable() from exc
+        if status == 403:
+            raise iam_exceptions.Forbidden()
+        if status == 404:
+            raise exceptions.NotFoundError(path=self.request.path)
+        try:
+            node = self.host_node(resource, body)
+            settings = cfg.CONF.victoria
+            result = Victoria(
+                settings.endpoint, settings.username, settings.password
+            ).current(node, datetime.now(timezone.utc))
+        except UnsupportedHypervisorUsage:
+            raise
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Failed to read node usage")
+            raise CurrentUsageUnavailable() from exc
+        return {self.query_key: str(resource), "resource_uuid": str(node), **result}
+
+
+class HypervisorCurrentUsageController(NodeCurrentUsageController):
+    query_key = "hypervisor_uuid"
+    query_error = InvalidHypervisorUsageQuery
+
+    def lookup(self, resource, authorization):
+        return Core.hypervisor(resource, authorization)
+
+    def host_node(self, resource, body):
+        spec = body["driver_spec"]
+        if spec["kind"] != "exordos_local_hyper" or not spec.get("node"):
+            raise UnsupportedHypervisorUsage()
+        return UUID(spec["node"])
 
 
 class CurrentUsageController(controllers.Controller):

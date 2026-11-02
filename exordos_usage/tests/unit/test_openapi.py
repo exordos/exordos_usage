@@ -76,3 +76,25 @@ def test_actual_usage_metrics_are_published():
         params = spec["paths"][f"/v1/usage/{view}/"]["get"]["parameters"]
         selected = next(p for p in params if p["name"] == "metric")
         assert {"cpu_used", "ram_used"} <= set(selected["schema"]["enum"])
+
+
+def test_hypervisor_current_contract():
+    spec = openapi.build()
+    operation = spec["paths"]["/v1/usage/hypervisors/current/"]["get"]
+    assert [p["name"] for p in operation["parameters"]] == ["hypervisor_uuid"]
+    assert operation["parameters"][0]["required"]
+    assert {"403", "404", "422", "503"} <= operation["responses"].keys()
+    properties = spec["components"]["schemas"]["HypervisorUsageCurrent"]["properties"]
+    assert "hypervisor_uuid" in properties
+    assert "realm_uuid" not in properties
+    assert "project_id" not in properties
+
+
+def test_node_current_contract():
+    spec = openapi.build()
+    operation = spec["paths"]["/v1/usage/nodes/current/"]["get"]
+    assert [p["name"] for p in operation["parameters"]] == ["node_uuid"]
+    assert "422" not in operation["responses"]
+    properties = spec["components"]["schemas"]["NodeUsageCurrent"]["properties"]
+    assert "node_uuid" in properties
+    assert "hypervisor_uuid" not in properties
