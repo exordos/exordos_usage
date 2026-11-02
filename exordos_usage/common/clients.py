@@ -46,7 +46,7 @@ class Core:
     def _resource(collection, resource_uuid, authorization):
         response = requests.get(
             cfg.CONF.ecosystem.core_endpoint.rstrip("/")
-            + f"/v1/compute/{collection}/{resource_uuid}/",
+            + f"/v1/compute/{collection}/{resource_uuid}",
             headers={"Authorization": authorization},
             timeout=(5, 10),
             allow_redirects=False,

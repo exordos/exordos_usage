@@ -279,7 +279,7 @@ def add_hypervisor_current_spec(spec):
         {
             "summary": "Read current Exordos hypervisor host utilization",
             "operationId": "Get_usage_hypervisors_current",
-            "description": "Requires usage.interval.read and access to GET /v1/compute/hypervisors/{uuid}/ in Core using the caller's token. Supports exordos_local_hyper driver_spec.node. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes the root filesystem only, not storage pools. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+            "description": "Requires usage.interval.read and access to GET /v1/compute/hypervisors/{uuid} in Core using the caller's token. Supports exordos_local_hyper driver_spec.node. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes the root filesystem only, not storage pools. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
             "security": [{"bearerAuth": []}],
             "parameters": [
                 {
@@ -330,7 +330,7 @@ def add_node_current_spec(spec):
     operation.update(
         summary="Read current compute node utilization",
         operationId="Get_usage_nodes_current",
-        description="Requires usage.interval.read and access to GET /v1/compute/nodes/{uuid}/ in Core using the caller's token. Supports any compute node with node exporter metrics and a fresh exordos_compute_node_info identity. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes only the root filesystem. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
+        description="Requires usage.interval.read and access to GET /v1/compute/nodes/{uuid} in Core using the caller's token. Supports any compute node with node exporter metrics and a fresh exordos_compute_node_info identity. CPU is averaged over one minute; memory is MemTotal minus MemAvailable; disk describes only the root filesystem. Samples older than 120 seconds are excluded. Missing measurements are null. No usage intervals are written.",
     )
     operation["parameters"][0]["name"] = "node_uuid"
     operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"] = (

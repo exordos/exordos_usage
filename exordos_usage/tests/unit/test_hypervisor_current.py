@@ -159,7 +159,7 @@ def test_core_lookup_uses_caller_token_without_redirects(status):
             with pytest.raises(ValueError):
                 Core.hypervisor(host, "Bearer caller")
         get.assert_called_once_with(
-            f"http://core/v1/compute/hypervisors/{host}/",
+            f"http://core/v1/compute/hypervisors/{host}",
             headers={"Authorization": "Bearer caller"},
             timeout=(5, 10),
             allow_redirects=False,
@@ -226,4 +226,76 @@ def test_core_node_lookup_uses_node_collection():
     ):
         config.CONF.ecosystem.core_endpoint = "http://core/"
         assert Core.node(node, "Bearer caller")[0] == 200
-        assert get.call_args.args[0] == f"http://core/v1/compute/nodes/{node}/"
+        assert get.call_args.args[0] == f"http://core/v1/compute/nodes/{node}"
+
+
+@pytest.mark.parametrize(
+    "collection,key", [("nodes", "node_uuid"), ("hypervisors", "hypervisor_uuid")]
+)
+def test_current_lookup_obeys_restalchemy_resource_routing(collection, key):
+    from restalchemy.api import applications, controllers, routes
+    from restalchemy.api.middlewares.errors import ErrorsHandlerMiddleware
+
+    resource, node = uuid4(), uuid4()
+    app, token = authenticated_app(uuid4())
+
+    class ComputeResourceController(controllers.Controller):
+        def get(self, uuid):
+            assert self.request.headers["Authorization"] == "Bearer " + token
+            assert uuid == str(resource)
+            return {
+                "uuid": uuid,
+                "driver_spec": {"kind": "exordos_local_hyper", "node": str(node)},
+            }
+
+    class ResourceRoute(routes.Route):
+        __controller__ = ComputeResourceController
+        __allow_methods__ = (routes.GET,)
+
+    class ComputeRoute(routes.Route):
+        __controller__ = controllers.RoutesListController
+
+        nodes = routes.route(ResourceRoute)
+        hypervisors = routes.route(ResourceRoute)
+
+    class VersionRoute(routes.Route):
+        __controller__ = controllers.RoutesListController
+
+        compute = routes.route(ComputeRoute)
+
+    class RootRoute(routes.RootRoute):
+        v1 = routes.route(VersionRoute)
+
+    core = ErrorsHandlerMiddleware(applications.WSGIApp(RootRoute))
+
+    def core_get(url, headers, **kwargs):
+        response = Request.blank(url, headers=headers).get_response(core)
+        return Mock(
+            status_code=response.status_int, json=Mock(return_value=response.json)
+        )
+
+    # The framework distinguishes resource URLs from collection URLs.
+    assert (
+        core_get(
+            f"http://core/v1/compute/{collection}/{resource}/",
+            {"Authorization": "Bearer " + token},
+        ).status_code
+        == 404
+    )
+    with (
+        patch("exordos_usage.common.clients.requests.get", side_effect=core_get),
+        patch("exordos_usage.common.clients.cfg") as config,
+        patch("exordos_usage.user_api.api.controllers.Victoria") as metrics,
+        patch("exordos_usage.user_api.api.controllers.cfg", Mock()),
+    ):
+        config.CONF.ecosystem.core_endpoint = "http://core"
+        metrics.return_value.current.return_value = {"status": "no_data"}
+        response = Request.blank(
+            f"/v1/usage/{collection}/current/?{key}={resource}",
+            headers={"Authorization": "Bearer " + token},
+        ).get_response(app)
+        assert response.status_int == 200
+        assert response.json[key] == str(resource)
+        assert metrics.return_value.current.call_args.args[0] == (
+            resource if collection == "nodes" else node
+        )
