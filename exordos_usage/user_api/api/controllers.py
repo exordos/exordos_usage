@@ -207,7 +207,7 @@ class NodeCurrentUsageController(controllers.Controller):
             raise self.query_error() from exc
         authorization = self.request.headers.get("Authorization")
         if not authorization:
-            raise iam_exceptions.Forbidden()
+            raise iam_exceptions.Unauthorized()
         try:
             status, body = self.lookup(resource, authorization)
         except Exception as exc:
@@ -215,7 +215,9 @@ class NodeCurrentUsageController(controllers.Controller):
                 "Failed to verify compute resource access"
             )
             raise CurrentUsageUnavailable() from exc
-        if status in (401, 403):
+        if status == 401:
+            raise iam_exceptions.InvalidAuthTokenError()
+        if status == 403:
             raise iam_exceptions.Forbidden()
         if status == 404:
             raise exceptions.NotFoundError(path=self.request.path)

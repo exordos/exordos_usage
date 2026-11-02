@@ -66,7 +66,7 @@ def test_host_snapshot_uses_authorized_core_node():
 @pytest.mark.parametrize(
     "scenario,expected",
     [
-        ("invalid_token", 403),
+        ("invalid_token", 401),
         ("denied", 403),
         ("missing", 404),
         ("unsupported", 422),
@@ -106,6 +106,8 @@ def test_host_access_and_upstream_failures(scenario, expected):
             headers={"Authorization": "Bearer " + token},
         ).get_response(app)
         assert response.status_int == expected
+        if scenario == "invalid_token":
+            assert response.json["error"] == "invalid_token"
         assert "private details" not in response.text
         if scenario != "metrics_outage":
             metrics.assert_not_called()
@@ -135,7 +137,7 @@ def test_anonymous_host_query_is_rejected():
     app, _ = authenticated_app(uuid4())
     with patch("exordos_usage.user_api.api.controllers.Core.hypervisor") as lookup:
         response = Request.blank(PATH + f"?hypervisor_uuid={uuid4()}").get_response(app)
-        assert response.status_int in (401, 403)
+        assert response.status_int == 401
         lookup.assert_not_called()
 
 
@@ -178,7 +180,7 @@ def test_core_lookup_rejects_wrong_identity():
             Core.hypervisor(uuid4(), "Bearer caller")
 
 
-@pytest.mark.parametrize("status", [200, 403, 404, 503])
+@pytest.mark.parametrize("status", [200, 401, 403, 404, 503])
 def test_node_current_uses_node_access_and_shared_measurements(status):
     node = uuid4()
     app, token = authenticated_app(uuid4(), "no_permission")
@@ -201,6 +203,8 @@ def test_node_current_uses_node_access_and_shared_measurements(status):
             headers={"Authorization": "Bearer " + token},
         ).get_response(app)
         assert response.status_int == status
+        if status == 401:
+            assert response.json["error"] == "invalid_token"
         lookup.assert_called_once_with(node, "Bearer " + token)
         if status == 200:
             assert (
