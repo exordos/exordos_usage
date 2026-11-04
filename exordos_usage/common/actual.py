@@ -27,8 +27,16 @@ def points(rows):
     for row in rows:
         for timestamp, value in zip(row["timestamps"], row["values"]):
             timestamp, value = int(timestamp), sample_value(value)
-            if timestamp in result and not same_sample(result[timestamp], value):
-                raise ValueError("Conflicting node exporter samples")
+            if timestamp in result:
+                previous = result[timestamp]
+                # A label transition can export a stale marker and a live sample
+                # at the same instant. Keep the observation, independent of order.
+                if value.is_nan() and previous.is_finite():
+                    continue
+                if not (previous.is_nan() and value.is_finite()) and not same_sample(
+                    previous, value
+                ):
+                    raise ValueError("Conflicting node exporter samples")
             result[timestamp] = value
     return result
 

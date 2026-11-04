@@ -179,3 +179,35 @@ def test_invalid_cpu_counter_does_not_invent_consumption(value):
     rows[0]["values"][1] = value
     samples = actual_samples([identity()], rows, 45000)
     assert integral(samples, "cpu_used").covered_ms == 0
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_identity_label_transition_prefers_live_sample_to_stale_marker(reverse):
+    old = identity()
+    old["values"][-1] = None
+    new = identity(times=(30000, 45000))
+    new["metric"]["pool"] = "hypervisor"
+    identities = [old, new]
+    if reverse:
+        identities.reverse()
+    samples = actual_samples(identities, measurements(), 45000)
+    assert integral(samples, "cpu_used").covered_ms == 30000
+    assert integral(samples, "cpu_used").quantity == Decimal("37.50")
+    assert integral(samples, "ram_used").covered_ms == 30000
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_duplicate_stale_counter_sample_does_not_hide_live_observation(reverse):
+    rows = measurements()
+    stale = {**rows[0], "values": [None, None, None]}
+    rows = [stale, *rows] if reverse else [*rows, stale]
+    samples = actual_samples([identity()], rows, 45000)
+    assert integral(samples, "cpu_used").covered_ms == 30000
+    assert integral(samples, "cpu_used").quantity == Decimal("37.50")
+
+
+def test_stale_only_identity_still_leaves_a_gap():
+    info = identity()
+    info["values"][1] = None
+    samples = actual_samples([info], measurements(), 45000)
+    assert integral(samples, "cpu_used").covered_ms == 0
